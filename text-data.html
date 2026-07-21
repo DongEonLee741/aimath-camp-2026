@@ -1,0 +1,3883 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>텍스트 데이터 처리 — 인공지능은 단어와 문장의 관계를 어떻게 알까?</title>
+<link rel="stylesheet" href="katex/katex.min.css">
+<style>
+/* ============================================================
+   디자인 토큰 (DESIGN-clay.md 상속 + 명세 6.1 시맨틱 색)
+   ============================================================ */
+:root{
+  --primary:#0a0a0a; --primary-active:#1f1f1f; --primary-disabled:#e5e5e5;
+  --ink:#0a0a0a; --body-c:#3a3a3a; --body-strong:#1a1a1a;
+  --muted:#6a6a6a; --muted-soft:#9a9a9a;
+  --hairline:#e5e5e5; --hairline-soft:#f0f0f0;
+  --canvas:#fffaf0; --surface-soft:#faf5e8; --surface-card:#f5f0e0; --surface-strong:#ebe6d6;
+  --on-primary:#ffffff;
+  --brand-pink:#ff4d8b; --brand-teal:#1a3a3a; --brand-lavender:#b8a4ed;
+  --brand-peach:#ffb084; --brand-ochre:#e8b94a; --brand-mint:#a4d4c5; --brand-coral:#ff6b5a;
+
+  --r-xs:6px; --r-sm:8px; --r-md:12px; --r-lg:16px; --r-xl:24px; --r-pill:9999px;
+
+  --sp-xxs:4px; --sp-xs:8px; --sp-sm:12px; --sp-md:16px; --sp-lg:24px; --sp-xl:32px; --sp-xxl:48px; --sp-section:96px;
+
+  /* 이 학습지 시맨틱 색 (명세 6.1) — 명세 원안 색상을 유지하되, 캔버스(#fffaf0)
+     배경 위 텍스트로 쓰일 때 WCAG 4.5:1을 만족하도록 살짝 어둡게 보정했다. */
+  --incl:#1d54c9;   /* 포함 (원안 #2f6df0 대비 4.4:1 → 보정 6.4:1) */
+  --excl:#5c6570;   /* 제외 (원안 #98a2b1 대비 2.5:1 → 보정 5.7:1) */
+  --merge:#7238c9;  /* 합치기 (원안 #8957e5 대비 4.4:1 → 보정 6.5:1) */
+  --sim:#2ea043;    /* 유사도 게이지 (칠 배경으로만 사용, 텍스트는 별도 보정) */
+  --fail:#e5484d;
+
+  --font-body:'Inter',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Segoe UI','Malgun Gothic',Roboto,sans-serif;
+  --font-serif:'Batang','Nanum Myeongjo','Apple SD Gothic Neo',serif;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;height:100%;overflow:hidden;}
+body{
+  background:var(--canvas); color:var(--body-c); font-family:var(--font-body);
+  font-size:16px; line-height:1.55; -webkit-text-size-adjust:100%;
+}
+h1,h2,h3{ color:var(--ink); font-weight:500; letter-spacing:-0.02em; margin:0 0 var(--sp-sm); }
+h1{font-size:28px; line-height:1.15;}
+h2{font-size:22px; line-height:1.2;}
+h3{font-size:17px; line-height:1.3;}
+p{margin:0 0 var(--sp-sm);}
+button{font-family:inherit;}
+table{border-collapse:separate;border-spacing:0;}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+:focus-visible{outline:3px solid var(--incl); outline-offset:2px;}
+
+/* ---------- 앱 셸 (1뷰포트: header·screen-root·bottom-nav 3단 flex column, logic.html 이식) ---------- */
+.app-shell{max-width:960px;margin:0 auto;height:100vh;height:100dvh;display:flex;flex-direction:column;padding:0 var(--sp-md);}
+.app-header{flex:none;background:var(--canvas);z-index:20;padding:var(--sp-sm) 0;border-bottom:1px solid var(--hairline);}
+.header-top{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-sm);}
+.app-title-btn{background:none;border:none;padding:2px 4px;cursor:pointer;text-align:left;font:inherit;}
+.app-title{font-size:15px;font-weight:600;color:var(--ink);letter-spacing:-0.01em;}
+.section-tag{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:0.02em;}
+.mascot-mini{width:34px;height:34px;flex:none;}
+.progress-track{display:flex;gap:4px;margin-top:var(--sp-xs);}
+.progress-seg{flex:1;height:6px;border-radius:var(--r-pill);background:var(--hairline);overflow:hidden;position:relative;}
+.progress-seg .fill{position:absolute;inset:0;background:var(--ink);width:0%;transition:width .25s ease;}
+.progress-seg.section-done .fill{background:var(--sim);}
+
+/* ---------- 화면 공통 ---------- */
+.screen-root{flex:1;min-height:0;position:relative;overflow:hidden;}
+/* ---------- 서브 슬라이드 스테이지(logic.html 1뷰포트 셸 이식, A1 개정): 화면 전환 pane.
+   pane은 항상 절대배치(position:absolute; inset:0)로 겹쳐 놓이고 overflow-y:auto로 내부
+   스크롤만 받는다 — 페이지 스크롤은 생기지 않는다(A1). 전환은 가로 슬라이드+페이드(A2 사양:
+   약 280ms·easeInOutQuad에 준하는 cubic-bezier·prefers-reduced-motion 시 즉시 전환). ---------- */
+.view-pane{position:absolute; inset:0; height:100%; padding:var(--sp-lg) 0; overflow-y:auto; transition:transform .28s cubic-bezier(.455,.03,.515,.955), opacity .28s cubic-bezier(.455,.03,.515,.955);}
+.view-pane.pane-active{transform:translateX(0);opacity:1;}
+.view-pane.pane-enter-right{transform:translateX(48px);opacity:0;}
+.view-pane.pane-enter-left{transform:translateX(-48px);opacity:0;}
+.view-pane.pane-exit-left{transform:translateX(-48px);opacity:0;}
+.view-pane.pane-exit-right{transform:translateX(48px);opacity:0;}
+.view-pane.pane-enter-right,.view-pane.pane-enter-left,.view-pane.pane-exit-left,.view-pane.pane-exit-right{pointer-events:none;}
+.step-dots{display:flex;gap:6px;justify-content:center;margin:0 0 var(--sp-sm);}
+.step-dot{width:7px;height:7px;border-radius:50%;background:var(--hairline);}
+.step-dot.active{background:var(--ink);width:18px;border-radius:var(--r-pill);}
+.screen{animation:screenIn .28s ease both;}
+@keyframes screenIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+.screen-eyebrow{font-size:13px;font-weight:600;color:var(--muted);letter-spacing:0.02em;margin-bottom:4px;}
+.screen-title{margin-bottom:var(--sp-sm);}
+.screen-prompt{font-size:17px;color:var(--body-strong);background:var(--surface-soft);border-radius:var(--r-lg);padding:var(--sp-md);margin-bottom:var(--sp-md);}
+.screen-block{margin-bottom:var(--sp-lg);}
+.muted{color:var(--muted);font-size:14px;}
+
+/* ---------- 버튼 ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:10px 20px;border-radius:var(--r-md);font-size:14px;font-weight:600;border:1px solid transparent;cursor:pointer;touch-action:manipulation;}
+.btn-primary{background:var(--primary);color:var(--on-primary);}
+.btn-primary:hover{background:var(--primary-active);}
+.btn-primary:disabled{background:var(--primary-disabled);color:var(--muted);cursor:not-allowed;}
+.btn-secondary{background:var(--canvas);color:var(--ink);border-color:var(--hairline);}
+.btn-secondary:hover{border-color:var(--ink);}
+.btn-secondary.active{background:var(--ink);color:var(--on-primary);}
+.btn-ghost{background:transparent;color:var(--ink);border-color:transparent;}
+.btn-sm{min-height:44px;padding:6px 14px;font-size:13px;}
+.btn-row{display:flex;flex-wrap:wrap;gap:var(--sp-xs);align-items:center;}
+
+/* ---------- 카드 ---------- */
+.card{border-radius:var(--r-xl);padding:var(--sp-lg);}
+.feature-card{margin-top:var(--sp-section);}
+.card-title{font-size:15px;font-weight:700;margin-bottom:6px;opacity:.85;}
+.card-body{font-size:16px;font-weight:600;}
+.card-cream{background:var(--surface-card);color:var(--ink);}
+.card-pink{background:var(--brand-pink);color:var(--ink);}
+.card-teal{background:var(--brand-teal);color:var(--on-primary);}
+.card-lavender{background:var(--brand-lavender);color:var(--ink);}
+.card-peach{background:var(--brand-peach);color:var(--ink);}
+.card-ochre{background:var(--brand-ochre);color:var(--ink);}
+.card-hairline{background:var(--canvas);border:1px solid var(--hairline);border-radius:var(--r-lg);padding:var(--sp-md);}
+
+/* ---------- 생각칸 ---------- */
+.thought-box{background:var(--surface-soft);border-radius:var(--r-lg);padding:var(--sp-md);margin:var(--sp-md) 0;}
+.thought-label{display:block;font-size:13px;font-weight:700;color:var(--body-strong);margin-bottom:6px;}
+.thought-input{width:100%;min-height:64px;border:1px solid var(--hairline);border-radius:var(--r-md);padding:10px 12px;font:inherit;font-size:15px;resize:vertical;background:var(--canvas);color:var(--ink);}
+.thought-input:focus{border-color:var(--incl);}
+
+/* ---------- 칩 / 세그토글 ---------- */
+.chips-row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0;}
+.chip{min-height:44px;padding:8px 16px;border-radius:var(--r-pill);border:1px solid var(--hairline);background:var(--canvas);color:var(--body-c);font-size:14px;font-weight:600;cursor:pointer;}
+.chip.active{background:var(--ink);color:var(--on-primary);border-color:var(--ink);}
+.chip.removable{padding:2px 4px 2px 16px;}
+.chip .chip-x{margin-left:2px;font-weight:800;min-width:44px;min-height:44px;padding:0;font-size:17px;}
+.seg-toggle{display:inline-flex;background:var(--surface-strong);border-radius:var(--r-pill);padding:4px;gap:2px;flex-wrap:wrap;}
+.seg-btn{min-height:44px;padding:6px 16px;border-radius:var(--r-pill);border:none;background:transparent;color:var(--muted);font-size:13px;font-weight:700;cursor:pointer;}
+.seg-btn.active{background:var(--ink);color:var(--on-primary);}
+
+/* ---------- 하이라이트 ---------- */
+.highlight-row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0;}
+.highlight-chip{padding:6px 14px;border-radius:var(--r-sm);font-weight:800;font-size:14px;background:rgba(47,109,240,.12);color:#1d4fb0;}
+
+/* ---------- 마스코트 ---------- */
+.mascot-row{display:flex;align-items:flex-start;gap:10px;margin:var(--sp-sm) 0;}
+.mascot-avatar{width:48px;height:48px;border-radius:50%;overflow:hidden;flex:none;background:var(--brand-lavender);display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--ink);}
+.mascot-avatar img{width:100%;height:100%;object-fit:cover;display:block;}
+.mascot-avatar.mascot-fallback::after{content:'✦';}
+.mascot-mini.mascot-fallback::after{content:'✦';font-size:16px;}
+.mascot-bubble{background:var(--canvas);border:1px solid var(--hairline);border-radius:var(--r-lg);border-top-left-radius:4px;padding:10px 14px;font-size:14px;color:var(--body-strong);max-width:560px;}
+.mascot-bubble.tone-cheer{background:#eef6ec;border-color:var(--sim);}
+
+/* ---------- 넥스트 티저 / 토스트 ---------- */
+.next-tease{display:flex;align-items:center;gap:8px;background:var(--surface-card);border-radius:var(--r-pill);padding:10px 18px;font-weight:700;color:var(--body-strong);width:fit-content;margin-top:var(--sp-sm);}
+.toast{position:fixed;left:50%;bottom:88px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:var(--r-pill);font-size:14px;z-index:60;max-width:90vw;text-align:center;}
+.toast:empty{display:none;}
+
+/* ---------- 하단 내비 (1뷰포트: app-shell 내부 flex 아이템 — fixed 오버레이 아님) ---------- */
+.bottom-nav{flex:none;background:var(--canvas);border-top:1px solid var(--hairline);padding:10px var(--sp-md);display:flex;align-items:center;justify-content:space-between;gap:var(--sp-sm);z-index:30;}
+.nav-status{font-size:12px;color:var(--muted);}
+
+/* ---------- 교사 패널 ---------- */
+.teacher-panel{display:none;position:fixed;inset:0;background:rgba(10,10,10,.5);z-index:80;align-items:center;justify-content:center;padding:var(--sp-md);}
+.teacher-panel.open{display:flex;}
+.teacher-card{background:var(--canvas);border-radius:var(--r-xl);padding:var(--sp-xl);max-width:420px;width:100%;}
+
+/* ---------- 게임필 ---------- */
+.fx-pop{animation:fxPop .32s cubic-bezier(.34,1.56,.64,1);}
+@keyframes fxPop{0%{transform:scale(1);}45%{transform:scale(1.16);}100%{transform:scale(1);}}
+.fx-shake{animation:shakeX .4s ease;}
+@keyframes shakeX{0%,100%{transform:translateX(0);}20%{transform:translateX(-5px);}40%{transform:translateX(5px);}60%{transform:translateX(-4px);}80%{transform:translateX(4px);}}
+.fx-pulse{animation:fxPulse 1s ease-in-out infinite;}
+@keyframes fxPulse{0%,100%{opacity:1;}50%{opacity:.55;}}
+.confetti-piece{position:absolute;width:8px;height:8px;border-radius:2px;pointer-events:none;}
+
+/* ---------- 속성 체크표 (AttrTable) ---------- */
+.attr-table-wrap{overflow-x:auto;margin:var(--sp-sm) 0;}
+.attr-table{font-size:13px;min-width:320px;}
+.attr-table th,.attr-table td{border:1px solid var(--hairline);padding:6px 10px;text-align:center;}
+.attr-table th{background:var(--surface-soft);font-weight:700;color:var(--body-strong);}
+.attr-table td.attr-name{text-align:left;font-weight:600;color:var(--body-c);background:#fdfbf5;}
+.attr-cell.on{background:rgba(46,160,67,.14);color:#1e7a34;font-weight:800;}
+.attr-cell.off{color:var(--muted);}
+.attr-row-common td{background:rgba(245,166,35,.14);}
+
+/* ---------- 속성 체크표 압축판 (AttrTableCompact — W2·W3, 합집합 속성만) ---------- */
+.attr-compact-grid{display:grid;grid-template-columns:1fr;gap:6px;margin:6px 0;}
+@media (max-width:600px){ .attr-compact-grid{grid-template-columns:1fr 1fr;gap:4px;} }
+.attr-compact-row{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--hairline);border-radius:var(--r-sm);padding:6px 10px;font-size:13px;background:#fdfbf5;}
+.attr-compact-row.common{background:rgba(245,166,35,.14);}
+.attr-compact-row .name{font-weight:600;color:var(--body-c);}
+.attr-compact-row .vals{display:flex;gap:8px;font-weight:800;}
+.attr-compact-row .val.on{color:#1e7a34;}
+.attr-compact-row .val.off{color:var(--muted);}
+
+/* ---------- 코사인 레시피 ---------- */
+.recipe-steps{display:flex;flex-direction:column;gap:10px;margin:var(--sp-sm) 0;}
+.recipe-step{background:var(--canvas);border:1px solid var(--hairline);border-radius:var(--r-lg);padding:12px 16px;opacity:.4;transition:opacity .3s ease;}
+.recipe-step.shown{opacity:1;}
+.recipe-step .step-label{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.02em;}
+.recipe-step .step-value{font-size:20px;font-weight:800;color:var(--ink);margin-top:4px;}
+.recipe-step .step-detail{font-size:13px;color:var(--body-c);margin-top:4px;}
+.recipe-final{background:var(--surface-card);}
+.recipe-final .step-value{color:#1d4fb0;font-size:26px;}
+
+/* ---------- 유사도 게이지 ---------- */
+.sim-meter{background:var(--surface-strong);border-radius:var(--r-pill);height:26px;position:relative;overflow:hidden;margin:8px 0;}
+.sim-meter .fill{position:absolute;left:0;top:0;bottom:0;width:0%;background:var(--sim);transition:width .5s cubic-bezier(.22,1,.36,1);}
+.sim-meter .label{position:relative;z-index:2;display:flex;align-items:center;justify-content:center;height:100%;font-size:13px;font-weight:800;color:var(--ink);}
+.sim-meter.fail .fill{background:var(--fail);}
+
+/* ---------- 게임 (WordChainGame) ---------- */
+.game-hud{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:var(--sp-sm);}
+.hud-chip{background:var(--surface-card);border-radius:var(--r-md);padding:8px 14px;font-size:13px;font-weight:700;color:var(--body-strong);min-width:76px;text-align:center;}
+.hud-chip .hud-num{font-size:20px;font-weight:800;color:var(--ink);display:block;}
+.timer-track{height:12px;border-radius:var(--r-pill);background:var(--surface-strong);overflow:hidden;margin-bottom:var(--sp-sm);}
+.timer-track .fill{height:100%;background:var(--sim);width:100%;transition:width 1s linear;}
+.timer-track.low .fill{background:var(--fail);}
+.current-word-card{background:var(--ink);color:var(--on-primary);border-radius:var(--r-xl);padding:20px;text-align:center;margin-bottom:var(--sp-sm);}
+.current-word-card .cw-label{font-size:12px;opacity:.7;font-weight:700;}
+.current-word-card .cw-word{font-size:30px;font-weight:800;margin-top:4px;}
+.game-input-row{display:flex;gap:8px;margin-bottom:var(--sp-sm);}
+.game-input-row input[type=text]{flex:1;min-height:48px;border:2px solid var(--hairline);border-radius:var(--r-md);padding:8px 14px;font:inherit;font-size:16px;background:var(--canvas);color:var(--ink);}
+.game-input-row input[type=text]:focus{border-color:var(--incl);}
+.chain-wrap{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:var(--sp-sm);}
+.chain-word{background:var(--surface-card);border-radius:var(--r-pill);padding:6px 14px;font-size:13px;font-weight:700;color:var(--body-strong);}
+.chain-word.chain-new{animation:fxPop .32s cubic-bezier(.34,1.56,.64,1);}
+.game-feedback{min-height:22px;font-size:14px;font-weight:700;}
+.game-feedback.ok{color:#1e7a34;}
+.game-feedback.bad{color:#c22;}
+.candidate-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;}
+.game-modal{background:var(--surface-soft);border-radius:var(--r-xl);padding:var(--sp-lg);}
+.game-summary{background:var(--surface-card);border-radius:var(--r-xl);padding:var(--sp-lg);text-align:center;}
+.game-summary .summary-score{font-size:40px;font-weight:800;color:var(--ink);}
+.mode-badge-row{display:flex;align-items:center;gap:8px;margin:var(--sp-sm) 0;flex-wrap:wrap;}
+.mode-badge{display:inline-block;padding:4px 12px;border-radius:var(--r-pill);font-size:12px;font-weight:700;background:var(--surface-strong);color:var(--body-strong);}
+.mode-badge.on{background:rgba(46,160,67,.16);color:#186b2c;}
+.mode-badge.off{background:rgba(229,72,77,.14);color:#a91d21;}
+
+/* ---------- 형태소 편집판 (MorphBoard) ---------- */
+.morph-instructions{background:var(--surface-soft);border-radius:var(--r-md);padding:10px 14px;font-size:13px;color:var(--body-c);margin-bottom:var(--sp-sm);}
+.morph-board{display:flex;flex-wrap:wrap;gap:10px;padding:var(--sp-md);background:var(--canvas);border:1px solid var(--hairline);border-radius:var(--r-lg);margin-bottom:var(--sp-sm);align-items:flex-end;}
+.morph-token-wrap{display:flex;flex-direction:column;align-items:center;gap:2px;}
+.morph-token{min-width:44px;min-height:44px;padding:6px 12px;border-radius:var(--r-md);border:2px solid var(--hairline);background:var(--canvas);cursor:pointer;font-size:16px;font-weight:700;color:var(--excl);touch-action:manipulation;position:relative;}
+.morph-token.included{color:var(--incl);border-color:var(--incl);text-decoration:underline;text-decoration-thickness:2px;}
+.morph-token.excluded{color:var(--excl);}
+.morph-token.armed{color:var(--merge);border-color:var(--merge);border-style:dashed;box-shadow:0 0 0 3px rgba(137,87,229,.18);}
+.morph-token.base-applied{background:#eef6ec;}
+.postag{font-size:12px;font-weight:800;padding:2px 6px;border-radius:var(--r-xs);letter-spacing:.02em;}
+.postag.pos-noun{background:rgba(232,185,74,.28);color:#6e4f0a;}
+.postag.pos-particle{background:rgba(184,164,237,.32);color:#5b3fa0;}
+.postag.pos-verb{background:rgba(255,176,132,.35);color:#a2481a;}
+.postag.pos-adj{background:rgba(164,212,197,.4);color:#1e6e56;}
+.postag.pos-ending{background:rgba(255,77,139,.16);color:#a1195a;}
+.postag.pos-adv{background:var(--hairline-soft);color:#565656;}
+.token-actions{display:flex;flex-wrap:wrap;gap:4px;max-width:120px;}
+.token-actions button{min-width:44px;min-height:44px;padding:2px;font-size:13px;border-radius:var(--r-xs);border:1px solid var(--hairline);background:var(--canvas);cursor:pointer;}
+.morph-result{background:var(--surface-card);border-radius:var(--r-lg);padding:12px 16px;margin-top:6px;}
+.morph-edit-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+.morph-edit-row input[type=text]{min-height:44px;min-width:120px;padding:6px 10px;border:2px solid var(--incl);border-radius:var(--r-md);font:inherit;font-size:15px;background:var(--canvas);color:var(--ink);}
+
+/* ---------- 워드클라우드 (CLOUD) ---------- */
+.cloud-controls{display:flex;flex-wrap:wrap;gap:var(--sp-md);align-items:center;margin-bottom:var(--sp-sm);}
+.cloud-control-group{display:flex;flex-direction:column;gap:4px;}
+.cloud-control-group label{font-size:12px;font-weight:700;color:var(--muted);}
+.cloud-canvas-wrap{border:1px solid var(--hairline);border-radius:var(--r-lg);background:var(--canvas);overflow:hidden;margin-bottom:var(--sp-sm);}
+.check-row{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:var(--body-strong);min-height:44px;cursor:pointer;}
+.check-row input[type=checkbox]{width:20px;height:20px;}
+
+/* ---------- 말뭉치 소개 그리드 (S5 step0, CorpusGrid) ---------- */
+.corpus-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0;}
+@media (max-width:600px){ .corpus-grid{grid-template-columns:1fr;} }
+.corpus-card{border:1px solid var(--hairline);border-radius:var(--r-md);padding:8px 12px;font-size:13px;background:#fdfbf5;}
+.corpus-card.focus{background:rgba(46,160,67,.12);border-color:var(--sim);font-weight:700;}
+
+/* ---------- 빈도표 (FreqTable) ---------- */
+.freq-table-wrap{overflow-x:auto;margin:var(--sp-sm) 0;}
+.freq-table{font-size:14px;width:100%;max-width:420px;}
+.freq-table th,.freq-table td{border:1px solid var(--hairline);padding:12px;text-align:left;}
+.freq-table th{background:var(--surface-soft);}
+.freq-table td.num{text-align:right;font-weight:700;}
+.freq-row{cursor:pointer;}
+.freq-row.selected{background:rgba(46,160,67,.12);}
+.freq-row.selected td:first-child::before{content:'✓ ';color:#186b2c;font-weight:800;}
+
+/* ---------- TF·IDF 계산기 ---------- */
+.tfidf-table-wrap{overflow-x:auto;margin:var(--sp-sm) 0;}
+.tfidf-table{font-size:13px;width:100%;}
+.tfidf-table th,.tfidf-table td{border:1px solid var(--hairline);padding:6px 10px;text-align:center;}
+.tfidf-table th{background:var(--surface-soft);}
+.tfidf-cell{min-height:44px;background:var(--canvas);border:none;width:100%;cursor:pointer;font-weight:700;border-radius:var(--r-xs);padding:4px;}
+.tfidf-cell.revealed{background:rgba(46,160,67,.16);color:#1e7a34;cursor:default;}
+
+/* ---------- 비교 막대 (compare-bar — S5 B·C 시각화 공용, 흔한/드문 단어·중요도 점수 대비) ---------- */
+.compare-bar-row{display:flex;align-items:center;gap:10px;margin:10px 0;}
+.compare-bar-label{width:96px;flex:none;font-weight:700;font-size:14px;color:var(--body-strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.compare-bar-track{flex:1;height:22px;background:var(--surface-strong);border-radius:var(--r-pill);overflow:hidden;position:relative;}
+.compare-bar-fill{position:absolute;left:0;top:0;bottom:0;width:0%;background:var(--incl);border-radius:var(--r-pill);transition:width .5s cubic-bezier(.22,1,.36,1);}
+.compare-bar-value{width:56px;flex:none;text-align:right;font-weight:800;font-size:14px;}
+
+/* ---------- 유사도 게이지 + 각도 호 이중 인코딩 (D-3) ---------- */
+.sim-meter-row{display:flex;align-items:center;gap:8px;}
+.sim-meter-row .sim-meter{flex:1;margin:8px 0;}
+.angle-wedge{flex:none;}
+
+/* ---------- 벡터·각도 장면 (D-1·D-2 — 원점+화살표 2개+각도 호) ---------- */
+.vector-scene-wrap{display:flex;flex-direction:column;align-items:center;gap:6px;margin:var(--sp-sm) 0;}
+.vector-scene-legend{display:flex;gap:16px;font-size:13px;font-weight:700;}
+
+@media (prefers-reduced-motion: reduce){
+  *{animation-duration:.001s !important; transition-duration:.001s !important;}
+}
+@media (max-width:600px){
+  .app-shell{padding:0 var(--sp-sm);}
+  h1{font-size:22px;}
+  .current-word-card .cw-word{font-size:24px;}
+}
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <header class="app-header">
+    <div class="header-top">
+      <button type="button" class="app-title-btn" id="appTitleBtn" aria-label="텍스트 데이터 처리 학습지, 다섯 번 누르면 교사 패널">
+        <span class="app-title" id="appTitle">텍스트 데이터 처리 — 단어와 문장의 관계를 어떻게 알까?</span>
+      </button>
+      <span class="mascot-mini" id="mascotMini" aria-hidden="true"></span>
+    </div>
+    <div class="section-tag" id="sectionTag">섹션1 · 단어 사이의 관계</div>
+    <div class="progress-track" id="progressTrack"></div>
+  </header>
+  <main class="screen-root" id="screenRoot" tabindex="-1"></main>
+  <nav class="bottom-nav">
+    <button type="button" class="btn btn-secondary" id="prevBtn">이전</button>
+    <span class="nav-status" id="navStatus" aria-live="off">1 / 11</span>
+    <button type="button" class="btn btn-primary" id="nextBtn">다음</button>
+  </nav>
+</div>
+
+<div class="teacher-panel" id="teacherPanel">
+  <div class="teacher-card" role="dialog" aria-modal="true" aria-labelledby="teacherTitle">
+    <h2 id="teacherTitle">교사 패널</h2>
+    <p class="muted">이 학습지의 저장 데이터(aimath26_txt_ 네임스페이스)만 초기화합니다. 다른 학습지에는 영향이 없습니다.</p>
+    <div id="teacherConfirmArea"></div>
+    <div class="btn-row" style="margin-top:var(--sp-md);">
+      <button type="button" class="btn btn-primary" id="teacherResetBtn">전체 초기화</button>
+      <button type="button" class="btn btn-secondary" id="teacherCloseBtn">닫기</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="sr-only" id="liveRegion" aria-live="polite"></div>
+
+<script src="data.js"></script>
+<script src="katex/katex.min.js"></script>
+<script>
+(function(){
+'use strict';
+
+/* ============================================================
+   1) STATE — 전역 상태 + localStorage (네임스페이스 aimath26_txt_)
+   ============================================================ */
+var STORAGE_KEY = 'aimath26_txt_state';
+var NS_PREFIX = 'aimath26_txt_';
+
+/* W4 게임 온라인 채점 프록시 엔드포인트(§B W4·§D 5.1). 계약: POST {a, b} -> {score, raw}.
+   [E-2 프록시 배포 별도 트랙] 홈서버(math-class.it.kr) 배포는 이 세션 범위 밖 -- 배포 전에는
+   핑이 항상 실패해 오프라인 폴백으로 자동 전환된다(D-5: fetch는 이 상수를 쓰는 어댑터·핑 한 곳뿐). */
+var TXT_SIM_ENDPOINT = 'https://math-class.it.kr/api/txt-sim';
+
+function mergeDefaults(def, saved){
+  if(Array.isArray(def)){
+    return Array.isArray(saved) ? saved : def.slice();
+  }
+  if(def && typeof def === 'object'){
+    var keys = Object.keys(def);
+    if(keys.length === 0){
+      return (saved && typeof saved === 'object' && !Array.isArray(saved)) ? saved : {};
+    }
+    var out = {};
+    for(var k in def){ out[k] = mergeDefaults(def[k], saved ? saved[k] : undefined); }
+    return out;
+  }
+  return saved !== undefined ? saved : def;
+}
+
+function DEFAULT_STATE(){
+  return {
+    version: 2,
+    screenId: 'W1',
+    screens: {
+      W1: { step:0, attrs: [], thought:'' },
+      W2: { step:0, thought:'' },
+      W3: { step:0, seen:{catdog:false, cartrain:false, catcar:false} },
+      W4: { step:0, difficulty:'normal', mode:null, best:0, played:false, plays:0 },
+      S1: { step:0, thought:'' },
+      S2: { step:0, thought:'' },
+      S3: { step:0, thought:'' },
+      S4: { step:0, sentences:{}, confirmed:{} },
+      S5: { step:0, shape:'circle', font:'sans', stopwordFilter:true, selected:{}, tfidfDoc:0, revealed:{}, calcStep:0 },
+      S5C:{ step:0 },
+      S6: { step:0, thought:'', computed:false }
+    }
+  };
+}
+
+var STATE = {
+  data: null,
+  load: function(){
+    var loaded = null;
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(raw) loaded = JSON.parse(raw);
+    }catch(e){ loaded = null; }
+    /* 상태 v2 마이그레이션: 구버전(version!==2) 저장분은 폐기하고 기본값으로 시작한다(형제 파일
+       ai·logic과 동일한 회차 위생 -- 캠프 전·실데이터 없음·교사 리셋 존재). */
+    if(loaded && loaded.version !== 2){ loaded = null; }
+    this.data = mergeDefaults(DEFAULT_STATE(), loaded);
+    /* 변조·이종 저장분의 잘못된 screenId 새니타이즈 -- ROUTER.index()가 -1을 그대로
+       SCREEN_DEFS에 인덱싱하면 TypeError로 부팅이 죽는다. */
+    if(ROUTER.index(this.data.screenId) < 0){ this.data.screenId = 'W1'; }
+    this.save();
+  },
+  save: function(){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data)); }catch(e){}
+  },
+  reset: function(){
+    try{
+      var keys = Object.keys(localStorage);
+      for(var i=0;i<keys.length;i++){ if(keys[i].indexOf(NS_PREFIX) === 0) localStorage.removeItem(keys[i]); }
+    }catch(e){}
+    this.data = DEFAULT_STATE();
+    this.save();
+  },
+  screen: function(id){ return this.data.screens[id]; }
+};
+
+/* ============================================================
+   2) ROUTER — 화면·서브 슬라이드(step) 목록·이동·진행바
+   (logic.html 2회차 최신판의 view-pane 이중 pane·전환 엔진 이식. 이 학습지는 스크롤 페이지이므로
+   pane은 정지 상태에서 일반 흐름에 놓이고, 전환 300ms 구간에서만 절대배치로 겹쳐 슬라이드한다.
+   이번 단계는 10화면 전부 steps 길이 1(단일 step 래퍼) -- step-dots는 길이<2라 뜨지 않는다.) */
+var SCREEN_DEFS = [
+  {id:'W1', section:1, label:'속성 나열'},
+  {id:'W2', section:1, label:'유사성 = 속성 겹침'},
+  {id:'W3', section:1, label:'코사인 유사도'},
+  {id:'W4', section:1, label:'코사인 이어말하기 게임'},
+  {id:'S1', section:2, label:'문장은 어떻게 비슷할까?'},
+  {id:'S2', section:2, label:'문장은 무엇을 비교하나'},
+  {id:'S3', section:2, label:'다 비교해야 할까?'},
+  {id:'S4', section:2, label:'문장 분해'},
+  {id:'S5', section:2, label:'워드클라우드·중요도 점수'},
+  {id:'S5C', section:2, label:'이 점수로 무엇을 할까'},
+  {id:'S6', section:2, label:'문장의 코사인 유사도'}
+];
+var SECTION_LABEL = {1:'섹션1 · 단어 사이의 관계', 2:'섹션2 · 문장 사이의 관계'};
+
+/* ---- KaTeX 렌더 헬퍼: [data-katex] 전부에 수식을 그린다. katex 미로드 시 원문 텍스트로 폴백.
+   W3 코사인 레시피(CosineRecipe) 등 data-katex 사용처가 화면 곳곳에 있다. ---- */
+function renderMath(root){
+  if(!root || !root.querySelectorAll) return;
+  var nodes = root.querySelectorAll('[data-katex]');
+  for(var i=0;i<nodes.length;i++){
+    var node = nodes[i];
+    var tex = node.getAttribute('data-katex') || '';
+    if(typeof katex === 'undefined'){
+      node.textContent = tex;
+      continue;
+    }
+    try{ katex.render(tex, node, {throwOnError:false}); }
+    catch(e){ node.textContent = tex; }
+  }
+}
+
+/* ---- 서브 슬라이드 엔진 헬퍼: SCREENS[id].steps(배열) 위에서 화면·step 이동을 통일 처리한다. ---- */
+function currentMod(){ return SCREENS[STATE.data.screenId]; }
+function stepCountOf(mod){ return (mod && mod.steps && mod.steps.length) ? mod.steps.length : 0; }
+function currentStepIdx(){
+  var mod = currentMod();
+  var n = stepCountOf(mod);
+  if(!n) return 0;
+  var st = STATE.screen(STATE.data.screenId);
+  var idx = (st && typeof st.step === 'number') ? st.step : 0;
+  if(idx < 0) idx = 0;
+  if(idx > n-1) idx = n-1;
+  return idx;
+}
+function mountCurrentView(pane){
+  var mod = currentMod();
+  if(!mod) return mod;
+  var n = stepCountOf(mod);
+  if(n){
+    var idx = currentStepIdx();
+    mod.steps[idx].mount(pane);
+    renderStepDots(pane, mod, idx);
+  } else {
+    mod.mount(pane);
+  }
+  renderMath(pane);
+  return mod;
+}
+function renderStepDots(pane, mod, idx){
+  if(!mod.steps || mod.steps.length<2) return;
+  var row = el('div', {class:'step-dots'});
+  for(var i=0;i<mod.steps.length;i++){
+    row.appendChild(el('span', {class:'step-dot'+(i===idx?' active':''), 'aria-hidden':'true'}));
+  }
+  row.appendChild(el('span', {class:'sr-only'}, (idx+1) + ' / ' + mod.steps.length + ' 단계'));
+  pane.insertBefore(row, pane.firstChild);
+}
+function focusView(pane){
+  var heading = pane.querySelector('h1, h2');
+  var target = heading || pane;
+  if(!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+  target.focus({preventScroll:true});
+}
+/* refresh()(같은 화면 내 재구성) 전용 포커스 착지: 제목으로 강탈하지 않고 호출부가 지정한
+   조작 원점(selector)이 있으면 그곳, 없으면 새로 그려진 영역의 첫 컨트롤로 되돌린다. */
+function focusFirstControl(pane, selector){
+  var target = selector ? pane.querySelector(selector) : null;
+  if(!target){
+    target = pane.querySelector('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+  }
+  if(!target){ focusView(pane); return; }
+  target.focus({preventScroll:true});
+}
+function announceViewChange(def){
+  var mod = currentMod();
+  var n = stepCountOf(mod);
+  if(n){ announce(def.label + ' 화면, ' + (currentStepIdx()+1) + ' / ' + n + ' 단계'); }
+  else { announce(def.label + ' 화면'); }
+}
+
+var ROUTER = {
+  screenEl: null,
+  activePane: null,
+  _transitioning: false,
+  _transitionTimer: null,
+  index: function(id){ for(var i=0;i<SCREEN_DEFS.length;i++){ if(SCREEN_DEFS[i].id===id) return i; } return -1; },
+  stepCount: function(mod){ return stepCountOf(mod); },
+  go: function(id, opts){
+    opts = opts || {};
+    if(this.index(id) < 0 || this._transitioning) return;
+    var curMod = currentMod();
+    if(curMod && curMod.onStepExit && id !== STATE.data.screenId) curMod.onStepExit(currentStepIdx());
+    var mod = SCREENS[id];
+    var tgtState = STATE.data.screens[id];
+    var n = stepCountOf(mod);
+    if(n){
+      if(opts.enterStep === 'last') tgtState.step = n-1;
+      else if(opts.enterStep === 'first') tgtState.step = 0;
+      else if(typeof tgtState.step !== 'number' || tgtState.step<0 || tgtState.step>=n) tgtState.step = 0;
+    }
+    STATE.data.screenId = id;
+    STATE.save();
+    this.transitionTo(opts.dir || 'next', {silent: opts.silent});
+  },
+  canGoNext: function(){
+    var mod = currentMod();
+    if(!mod) return true;
+    var n = stepCountOf(mod);
+    if(n){
+      var step = mod.steps[currentStepIdx()];
+      return step && typeof step.isComplete === 'function' ? !!step.isComplete() : true;
+    }
+    return typeof mod.isComplete === 'function' ? !!mod.isComplete() : true;
+  },
+  next: function(){
+    if(this._transitioning) return;
+    var mod = currentMod();
+    var n = stepCountOf(mod);
+    if(n){
+      var stAll = STATE.screen(STATE.data.screenId);
+      var idx = (typeof stAll.step === 'number') ? stAll.step : 0;
+      if(idx < n-1){
+        if(!this.canGoNext()) return;
+        if(mod.onStepExit) mod.onStepExit(idx);
+        stAll.step = idx+1;
+        STATE.save();
+        this.transitionTo('next', {});
+        return;
+      }
+    }
+    if(!this.canGoNext()) return;
+    if(mod && mod.onStepExit) mod.onStepExit(currentStepIdx());
+    var i = this.index(STATE.data.screenId);
+    if(i < SCREEN_DEFS.length-1){ this.go(SCREEN_DEFS[i+1].id, {dir:'next', enterStep:'first'}); return; }
+    /* B6: 마지막 화면·마지막 단계에서 '완료' 클릭은 더 이동할 곳이 없어 그대로면 무반응이었다.
+       종료 피드백(토스트+SR 안내)을 준다. */
+    toast('학습을 마쳤어요!');
+    announce('학습을 마쳤어요.');
+  },
+  prev: function(){
+    if(this._transitioning) return;
+    var mod = currentMod();
+    var n = stepCountOf(mod);
+    if(n){
+      var stAll = STATE.screen(STATE.data.screenId);
+      var idx = (typeof stAll.step === 'number') ? stAll.step : 0;
+      if(idx > 0){
+        if(mod.onStepExit) mod.onStepExit(idx);
+        stAll.step = idx-1;
+        STATE.save();
+        this.transitionTo('prev', {});
+        return;
+      }
+    }
+    var i = this.index(STATE.data.screenId);
+    if(i>0){
+      if(mod && mod.onStepExit) mod.onStepExit(currentStepIdx());
+      this.go(SCREEN_DEFS[i-1].id, {dir:'prev', enterStep:'last'});
+    }
+  },
+  refresh: function(focusSelector){
+    /* 화면·step을 새로 이동하지 않고 같은 위치를 다시 그려야 할 때 -- 전환 애니메이션 없이 즉시 교체. */
+    this._rebuild();
+    focusFirstControl(this.activePane, focusSelector);
+  },
+  render: function(){
+    /* 최초 부팅·교사 리셋 등: 전환 애니메이션 없이 현재 위치를 그대로 그리고 제목에 포커스한다 */
+    this._rebuild();
+    focusView(this.activePane);
+  },
+  _rebuild: function(){
+    /* render()·refresh() 공용 재그리기. 대기 중인 전환 타이머가 있으면 취소해 스테일 activePane
+       참조·pane 누수를 막는다 — transitionTo의 전환 타이머가 나중에 발화하며 activePane을 이미
+       DOM에서 떨어져나간 newPane으로 덮어써, 다음 실제 전환이 지금 새로 그린 pane을 영영 못 지우는
+       문제를 막는다. */
+    if(this._transitionTimer){ clearTimeout(this._transitionTimer); this._transitionTimer = null; }
+    this._transitioning = false;
+    var i = this.index(STATE.data.screenId);
+    var def = SCREEN_DEFS[i];
+    this.screenEl.innerHTML = '';
+    var pane = el('div', {class:'view-pane pane-active'});
+    this.screenEl.appendChild(pane);
+    mountCurrentView(pane);
+    this.activePane = pane;
+    renderProgress(i, def);
+    renderNav(i);
+  },
+  transitionTo: function(dir, opts){
+    opts = opts || {};
+    var self = this;
+    var i = this.index(STATE.data.screenId);
+    var def = SCREEN_DEFS[i];
+    var oldPane = this.activePane;
+    var newPane = el('div', {class:'view-pane'});
+    this.screenEl.appendChild(newPane);
+    mountCurrentView(newPane);
+    renderProgress(i, def);
+    renderNav(i);
+    if(FX.reducedMotion){
+      if(oldPane) oldPane.remove();
+      newPane.classList.add('pane-active');
+      this.activePane = newPane;
+      focusView(newPane);
+      if(!opts.silent) announceViewChange(def);
+      return;
+    }
+    var enterCls = dir==='prev' ? 'pane-enter-left' : 'pane-enter-right';
+    var exitCls = dir==='prev' ? 'pane-exit-right' : 'pane-exit-left';
+    self._transitioning = true;
+    newPane.classList.add(enterCls);
+    void newPane.offsetWidth; /* 강제 리플로우로 진입 시작 상태를 확정한 뒤, 다음 프레임에 목표 상태로 전환한다(FLIP 기법) */
+    if(oldPane) oldPane.classList.add(exitCls);
+    requestAnimationFrame(function(){
+      newPane.classList.remove(enterCls);
+      newPane.classList.add('pane-active');
+    });
+    if(self._transitionTimer){ clearTimeout(self._transitionTimer); }
+    self._transitionTimer = setTimeout(function(){
+      self._transitionTimer = null;
+      if(oldPane) oldPane.remove();
+      self.activePane = newPane;
+      self._transitioning = false;
+      focusView(newPane);
+      if(!opts.silent) announceViewChange(def);
+    }, 300);
+  }
+};
+
+function renderProgress(i, def){
+  document.getElementById('sectionTag').textContent = SECTION_LABEL[def.section];
+  var track = document.getElementById('progressTrack');
+  track.innerHTML = '';
+  SCREEN_DEFS.forEach(function(s, idx){
+    var seg = document.createElement('span');
+    seg.className = 'progress-seg' + (idx < i ? ' section-done' : '');
+    var fill = document.createElement('span');
+    fill.className = 'fill';
+    fill.style.width = (idx <= i ? '100%' : '0%');
+    seg.appendChild(fill);
+    track.appendChild(seg);
+  });
+}
+
+var _lastGateEnabled = null; /* 게이팅 상태 전환 감지용(같은 상태에서 재렌더될 때 announce 반복 방지) */
+function renderNav(i){
+  var prevBtn = document.getElementById('prevBtn');
+  var nextBtn = document.getElementById('nextBtn');
+  var status = document.getElementById('navStatus');
+  var mod = SCREENS[SCREEN_DEFS[i].id];
+  var n = stepCountOf(mod);
+  var stepIdx = n ? currentStepIdx() : 0;
+  var atFirstStep = !n || stepIdx===0;
+  var atLastStep = !n || stepIdx===n-1;
+  prevBtn.style.visibility = (i>0 || !atFirstStep) ? 'visible' : 'hidden';
+  var isLast = (i === SCREEN_DEFS.length-1) && atLastStep;
+  nextBtn.textContent = isLast ? '완료' : '다음';
+  var enabled = ROUTER.canGoNext();
+  /* 마지막 화면·마지막 step도 게이팅 규칙 동일 적용(완료 버튼이 실제 완료 여부를 보여준다).
+     ROUTER.next()가 마지막 위치에서는 어차피 이동하지 않으므로 활성화돼도 안전하다. */
+  setDisabled(nextBtn, !enabled);
+  var stepTxt = n>1 ? (' · ' + (stepIdx+1) + '/' + n + '단계') : '';
+  var gateTxt = enabled ? '' : ' · 아직 완료되지 않았어요';
+  status.textContent = (i+1) + ' / ' + SCREEN_DEFS.length + ' · ' + SCREEN_DEFS[i].label + stepTxt + gateTxt;
+  if(!enabled && _lastGateEnabled !== false){ announce('다음으로 넘어가려면 이 화면을 먼저 완료하세요.'); }
+  _lastGateEnabled = enabled;
+}
+
+function refreshNav(){
+  var i = ROUTER.index(STATE.data.screenId);
+  renderNav(i);
+}
+
+/* ============================================================
+   3) COMPONENTS — 상속 컴포넌트 팩토리
+   ============================================================ */
+function el(tag, attrs, children){
+  var e = document.createElement(tag);
+  if(attrs){
+    for(var k in attrs){
+      var v = attrs[k];
+      if(v == null) continue;
+      if(k === 'class') e.className = v;
+      else if(k === 'html') e.innerHTML = v; /* 사용 금지(현재 호출처 0, G11) -- XSS 표면 축소를 위해 남겨두되 쓰지 않는다 */
+      else if(k.indexOf('on') === 0 && typeof v === 'function') e.addEventListener(k.slice(2), v);
+      else if(k === 'style' && typeof v === 'object'){ for(var sk in v) e.style[sk] = v[sk]; }
+      else e.setAttribute(k, v);
+    }
+  }
+  if(children){
+    (Array.isArray(children) ? children : [children]).forEach(function(c){
+      if(c == null) return;
+      e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    });
+  }
+  return e;
+}
+
+function setDisabled(btn, disabled){
+  var hadFocus = document.activeElement === btn;
+  btn.disabled = disabled;
+  if(disabled && hadFocus){
+    var root = document.getElementById('screenRoot');
+    if(root) root.focus({preventScroll:true});
+  }
+}
+
+function announce(msg){
+  var lr = document.getElementById('liveRegion');
+  if(lr) lr.textContent = msg;
+}
+
+var toastTimer = null;
+function toast(msg){
+  var t = document.getElementById('toast');
+  if(!t) return;
+  t.textContent = msg;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ t.textContent = ''; }, 2400);
+}
+
+/* ---- 한글 조사 판정 헬퍼(B5) — 가변 단어(게임 입력·병합 표면형·"문장1" 같은 숫자suffix
+   라벨 등) 뒤에 붙는 조사를 마지막 글자 받침 유무로 고른다. 한글 완성형 유니코드
+   범위(가=0xAC00~힣=0xD7A3)면 유니코드로, 마지막 글자가 아라비아 숫자면 그 한국어
+   발음(일·이·삼...)의 받침으로 판정한다(그 외 문자는 받침 없는 것으로 취급). ---- */
+var DIGIT_FINAL = {'0':'ㅇ','1':'ㄹ','2':null,'3':'ㅁ','4':null,'5':null,'6':'ㄱ','7':'ㄹ','8':'ㄹ','9':null};
+function lastCharFinal(word){
+  /* null = 받침 없음 / 'ㄹ' = ㄹ받침(으로·로 규칙에서만 받침 없는 것처럼 다뤄짐) / 'other' = 그 외 받침 */
+  var w = String(word || '');
+  if(!w) return null;
+  var last = w.charAt(w.length - 1);
+  if(Object.prototype.hasOwnProperty.call(DIGIT_FINAL, last)){
+    var d = DIGIT_FINAL[last];
+    return d === null ? null : (d === 'ㄹ' ? 'ㄹ' : 'other');
+  }
+  var code = last.charCodeAt(0) - 0xAC00;
+  if(code < 0 || code > 11171) return null;
+  var fin = code % 28;
+  if(fin === 0) return null;
+  return fin === 8 ? 'ㄹ' : 'other';
+}
+var JOSA = {
+  eunNeun: function(w){ return lastCharFinal(w) ? '은' : '는'; },
+  iGa: function(w){ return lastCharFinal(w) ? '이' : '가'; },
+  eulReul: function(w){ return lastCharFinal(w) ? '을' : '를'; },
+  waGwa: function(w){ return lastCharFinal(w) ? '과' : '와'; },
+  euroRo: function(w){
+    var f = lastCharFinal(w);
+    return (f === null || f === 'ㄹ') ? '로' : '으로';
+  }
+};
+
+var _svgIdSeq = 0; /* VectorAngleDiagram의 SVG marker id 충돌 방지용 전역 일련번호 */
+
+/* ---- D-3 각도 호 아이콘: 코사인 값(0~1)을 0~90도 쐐기(부채꼴)로 이중 인코딩한다.
+   값이 1(완전 같은 방향)이면 쐐기가 거의 안 보이고, 0(직각)이면 4분원 전체가 채워진다 —
+   "코사인 1에 가까울수록 비슷하다"는 기존 언어와 같은 방향으로 읽힌다. SVG 좌표는 원점을
+   좌하단에 두고(오른쪽=0도, 위쪽=90도) 그린다. ---- */
+function buildAngleWedge(value){
+  var v = Math.max(0, Math.min(1, value || 0));
+  var theta = Math.acos(v); /* 라디안, 0~PI/2 */
+  var size = 30, r = 12, ox = 4, oy = size - 4;
+  var ex = ox + r*Math.cos(theta), ey = oy - r*Math.sin(theta);
+  var d = 'M' + ox + ',' + oy + ' L' + (ox+r) + ',' + oy + ' A' + r + ',' + r + ' 0 0 0 ' + ex + ',' + ey + ' Z';
+  var svgNS = 'http://www.w3.org/2000/svg';
+  var svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 ' + size + ' ' + size);
+  svg.setAttribute('width', String(size)); svg.setAttribute('height', String(size));
+  svg.setAttribute('class', 'angle-wedge'); svg.setAttribute('aria-hidden', 'true');
+  var bg = document.createElementNS(svgNS, 'path');
+  bg.setAttribute('d', 'M' + ox + ',' + oy + ' L' + (ox+r) + ',' + oy + ' A' + r + ',' + r + ' 0 0 0 ' + ox + ',' + (oy-r) + ' Z');
+  bg.setAttribute('fill', 'none'); bg.setAttribute('stroke', 'var(--hairline)'); bg.setAttribute('stroke-width', '1');
+  var wedge = document.createElementNS(svgNS, 'path');
+  wedge.setAttribute('d', d);
+  wedge.setAttribute('fill', 'var(--incl)'); wedge.setAttribute('opacity', '0.55');
+  svg.appendChild(bg); svg.appendChild(wedge);
+  return svg;
+}
+
+var Components = {
+  ThoughtBox: function(opts){
+    var st = STATE.screen(opts.screenId);
+    var wrap = el('div', {class:'thought-box'});
+    var idAttr = 'tb-' + opts.screenId + '-' + opts.key;
+    wrap.appendChild(el('label', {class:'thought-label', 'for':idAttr}, opts.labelText || '생각칸'));
+    var ta = el('textarea', {id:idAttr, class:'thought-input', placeholder: opts.placeholder || ''});
+    ta.value = st[opts.key] || '';
+    ta.addEventListener('input', function(){
+      st[opts.key] = ta.value;
+      STATE.save();
+      if(opts.onChange) opts.onChange(ta.value.trim().length > 0);
+      refreshNav();
+    });
+    wrap.appendChild(ta);
+    if(opts.onChange) opts.onChange(ta.value.trim().length > 0);
+    return wrap;
+  },
+  SummaryCard: function(opts){
+    var cls = 'card feature-card card-' + (opts.color || 'cream');
+    return el('div', {class:cls}, [
+      opts.title ? el('div', {class:'card-title'}, opts.title) : null,
+      el('div', {class:'card-body'}, opts.body)
+    ]);
+  },
+  Highlight: function(items){
+    var wrap = el('div', {class:'highlight-row'});
+    items.forEach(function(it){ wrap.appendChild(el('span', {class:'highlight-chip'}, it.label)); });
+    return wrap;
+  },
+  SegToggle: function(opts){
+    var wrap = el('div', {class:'seg-toggle', role:'radiogroup', 'aria-label': opts.ariaLabel || ''});
+    var current = opts.value;
+    var buttons = [];
+    opts.options.forEach(function(o){
+      var b = el('button', {
+        type:'button', class:'seg-btn' + (o.value===current?' active':''),
+        role:'radio', 'aria-checked': o.value===current?'true':'false'
+      }, o.label);
+      b.addEventListener('click', function(){
+        current = o.value;
+        buttons.forEach(function(bb){
+          var on = bb.dataset.val === String(current);
+          bb.classList.toggle('active', on);
+          bb.setAttribute('aria-checked', on?'true':'false');
+        });
+        opts.onChange(current);
+      });
+      b.dataset.val = String(o.value);
+      buttons.push(b);
+      wrap.appendChild(b);
+    });
+    return wrap;
+  },
+  Chips: function(opts){
+    var wrap = el('div', {class:'chips-row'});
+    opts.items.forEach(function(it){
+      var b = el('button', {
+        type:'button', class:'chip' + (it.active?' active':''),
+        'aria-pressed': it.active?'true':'false'
+      }, it.label);
+      b.addEventListener('click', function(){ opts.onToggle(it.key); });
+      wrap.appendChild(b);
+    });
+    return wrap;
+  },
+  NextTease: function(text){
+    return el('div', {class:'next-tease'}, [
+      el('span', {'aria-hidden':'true'}, '➜'),
+      el('span', {}, text)
+    ]);
+  },
+  SimilarityMeter: function(opts){
+    /* opts: {value0to1, label, angle(D-3: 각도 호 이중 인코딩, 옵션 플래그·기본 false)} */
+    var wrap = el('div', {class:'sim-meter' + (opts.fail ? ' fail' : '')});
+    var fill = el('span', {class:'fill'});
+    var label = el('span', {class:'label'}, opts.label != null ? opts.label : Math.round((opts.value||0)*100) + '%');
+    wrap.appendChild(fill);
+    wrap.appendChild(label);
+    requestAnimationFrame(function(){ fill.style.width = Math.max(0, Math.min(100, (opts.value||0)*100)) + '%'; });
+    if(!opts.angle) return wrap;
+    var row = el('div', {class:'sim-meter-row'});
+    row.appendChild(buildAngleWedge(opts.value||0));
+    row.appendChild(wrap);
+    return row;
+  },
+  /* 코사인 유사도 "레시피" — W3(속성벡터)·S6(문장 TF·IDF 벡터) 공용.
+     용어(벡터·내적·cos)는 절대 노출하지 않고 계산 과정만 보여준다(명세 8·W3).
+     opts: {vecA, vecB, nameA, nameB, unitLabel(예: '속성'/'단어'), onDone(value)} */
+  CosineRecipe: function(opts){
+    var nameA = opts.nameA || 'A', nameB = opts.nameB || 'B', unit = opts.unitLabel || '항목';
+    var wrap = el('div', {class:'recipe-steps', 'aria-live':'polite'});
+    var together = 0, sizeASq = 0, sizeBSq = 0;
+    for(var i=0;i<opts.vecA.length;i++){ together += opts.vecA[i]*opts.vecB[i]; sizeASq += opts.vecA[i]*opts.vecA[i]; sizeBSq += opts.vecB[i]*opts.vecB[i]; }
+    var sizeA = Math.sqrt(sizeASq), sizeB = Math.sqrt(sizeBSq);
+    var ratio = (sizeA === 0 || sizeB === 0) ? 0 : together/(sizeA*sizeB);
+    var fmt = function(n){ return (Math.round(n*1000)/1000).toString(); };
+
+    var step1 = el('div', {class:'recipe-step'}, [
+      el('div', {class:'step-label'}, '① 함께 점수'),
+      el('div', {class:'step-value'}, '?'),
+      el('div', {class:'step-detail'}, nameA + JOSA.waGwa(nameA) + ' ' + nameB + JOSA.iGa(nameB) + ' 둘 다 가진 ' + unit + JOSA.eulReul(unit) + ' 곱해서 더해요.')
+    ]);
+    var step2 = el('div', {class:'recipe-step'}, [
+      el('div', {class:'step-label'}, '② 각자 크기'),
+      el('div', {class:'step-value'}, '?'),
+      el('div', {class:'step-detail'}, '각자 가진 양을 하나의 크기 숫자로 나타내요 (' + nameA + ' · ' + nameB + ').')
+    ]);
+    var step3 = el('div', {class:'recipe-step recipe-final'}, [
+      el('div', {class:'step-label'}, '③ 0~1 값 (코사인 유사도)'),
+      el('div', {class:'step-value'}, '?'),
+      el('div', {class:'step-detail'}, '함께 점수 ÷ (각자 크기끼리 곱한 값). 이 값이 코사인 유사도예요. 1에 가까울수록 비슷!')
+    ]);
+    wrap.appendChild(step1); wrap.appendChild(step2); wrap.appendChild(step3);
+
+    var btn = el('button', {type:'button', class:'btn btn-primary'}, '계산해 보기');
+    wrap.appendChild(btn);
+
+    function reveal(stepEl, content, delay){
+      setTimeout(function(){
+        stepEl.classList.add('shown');
+        var valueEl = stepEl.querySelector('.step-value');
+        valueEl.innerHTML = '';
+        (Array.isArray(content) ? content : [content]).forEach(function(node){
+          valueEl.appendChild(typeof node === 'string' ? document.createTextNode(node) : node);
+        });
+        renderMath(stepEl);
+        FX.pop(stepEl);
+      }, FX.reducedMotion ? 0 : delay);
+    }
+    btn.addEventListener('click', function(){
+      /* Fix-A 이월: disabled 전환으로 포커스가 소실되지 않도록, 결과를 담을 wrap(aria-live)으로
+         disabled 설정 전에 먼저 포커스를 옮긴다. */
+      if(!wrap.hasAttribute('tabindex')) wrap.setAttribute('tabindex', '-1');
+      wrap.focus({preventScroll:true});
+      btn.disabled = true;
+      reveal(step1, fmt(together), 0);
+      reveal(step2, [
+        el('span', {'data-katex': '\\sqrt{' + fmt(sizeASq) + '} \\approx ' + fmt(sizeA)}),
+        ' · ',
+        el('span', {'data-katex': '\\sqrt{' + fmt(sizeBSq) + '} \\approx ' + fmt(sizeB)})
+      ], 260);
+      setTimeout(function(){
+        reveal(step3, el('span', {'data-katex': fmt(together) + ' \\div (' + fmt(sizeA) + ' \\times ' + fmt(sizeB) + ') = ' + fmt(ratio)}), 0);
+        if(opts.onDone) opts.onDone(ratio);
+      }, FX.reducedMotion ? 0 : 520);
+    });
+    return wrap;
+  },
+  /* D-1·D-2 공용: 원점+화살표 2개+각도 호를 그리는 작은 SVG 장면.
+     opts: {Ax,Ay,Bx,By(첫사분면 좌표), labelA, labelB, colorA, colorB, showValueText(문자열|없으면 생략),
+     ariaLabel, size}. 값 표기(showValueText)는 D-1에서만 넘긴다(D-2는 "값 표기 생략" 정책). */
+  VectorAngleDiagram: function(opts){
+    var size = opts.size || 200, margin = 32;
+    var magA = Math.sqrt(opts.Ax*opts.Ax + opts.Ay*opts.Ay);
+    var magB = Math.sqrt(opts.Bx*opts.Bx + opts.By*opts.By);
+    var maxMag = Math.max(magA, magB, 0.001);
+    var scale = (size - margin*2) / maxMag;
+    var ox = margin, oy = size - margin;
+    function toSvg(x, y){ return [ox + x*scale, oy - y*scale]; }
+    var svgNS = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + size + ' ' + size);
+    svg.setAttribute('width', String(size)); svg.setAttribute('height', String(size));
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', opts.ariaLabel || '두 화살표와 그 사이 각도를 보여주는 그림');
+
+    var colorA = opts.colorA || '#1d54c9', colorB = opts.colorB || '#ff4d8b';
+    function addArrow(x, y, color){
+      var defs = document.createElementNS(svgNS, 'defs');
+      var markerId = 'vecArrow' + (++_svgIdSeq);
+      var marker = document.createElementNS(svgNS, 'marker');
+      marker.setAttribute('id', markerId);
+      marker.setAttribute('markerWidth', '8'); marker.setAttribute('markerHeight', '8');
+      marker.setAttribute('refX', '6'); marker.setAttribute('refY', '3'); marker.setAttribute('orient', 'auto');
+      var mpath = document.createElementNS(svgNS, 'path');
+      mpath.setAttribute('d', 'M0,0 L6,3 L0,6 Z'); mpath.setAttribute('fill', color);
+      marker.appendChild(mpath); defs.appendChild(marker); svg.appendChild(defs);
+      var p = toSvg(x, y);
+      var line = document.createElementNS(svgNS, 'line');
+      line.setAttribute('x1', String(ox)); line.setAttribute('y1', String(oy));
+      line.setAttribute('x2', String(p[0])); line.setAttribute('y2', String(p[1]));
+      line.setAttribute('stroke', color); line.setAttribute('stroke-width', '3');
+      line.setAttribute('marker-end', 'url(#' + markerId + ')');
+      svg.appendChild(line);
+      return p;
+    }
+    var pA = addArrow(opts.Ax, opts.Ay, colorA);
+    var pB = addArrow(opts.Bx, opts.By, colorB);
+
+    var originDot = document.createElementNS(svgNS, 'circle');
+    originDot.setAttribute('cx', String(ox)); originDot.setAttribute('cy', String(oy)); originDot.setAttribute('r', '3');
+    originDot.setAttribute('fill', 'var(--ink)');
+    svg.appendChild(originDot);
+
+    /* 각도 호: 두 화살표 사이(항상 90도 이하 -- 이 학습지 벡터는 전부 0 이상 성분이라
+       코사인이 음수가 될 수 없다)를 잇는 작은 호. */
+    var magAs = Math.sqrt((pA[0]-ox)*(pA[0]-ox) + (pA[1]-oy)*(pA[1]-oy));
+    var magBs = Math.sqrt((pB[0]-ox)*(pB[0]-ox) + (pB[1]-oy)*(pB[1]-oy));
+    var arcR = Math.max(10, Math.min(24, Math.min(magAs, magBs) * 0.55));
+    var aAngle = Math.atan2(pA[1]-oy, pA[0]-ox), bAngle = Math.atan2(pB[1]-oy, pB[0]-ox);
+    var arcA = [ox + arcR*Math.cos(aAngle), oy + arcR*Math.sin(aAngle)];
+    var arcB = [ox + arcR*Math.cos(bAngle), oy + arcR*Math.sin(bAngle)];
+    var sweepFlag = (bAngle > aAngle) ? 1 : 0;
+    var arcPath = document.createElementNS(svgNS, 'path');
+    arcPath.setAttribute('d', 'M' + arcA[0] + ',' + arcA[1] + ' A' + arcR + ',' + arcR + ' 0 0 ' + sweepFlag + ' ' + arcB[0] + ',' + arcB[1]);
+    arcPath.setAttribute('fill', 'none'); arcPath.setAttribute('stroke', 'var(--muted)'); arcPath.setAttribute('stroke-width', '2');
+    svg.appendChild(arcPath);
+
+    if(opts.showValueText){
+      var midAngle = (aAngle + bAngle) / 2;
+      var lp = [ox + (arcR+16)*Math.cos(midAngle), oy + (arcR+16)*Math.sin(midAngle)];
+      var labelEl = document.createElementNS(svgNS, 'text');
+      labelEl.setAttribute('x', String(lp[0])); labelEl.setAttribute('y', String(lp[1]));
+      labelEl.setAttribute('font-size', '13'); labelEl.setAttribute('font-weight', '800');
+      labelEl.setAttribute('fill', 'var(--body-strong)'); labelEl.setAttribute('text-anchor', 'middle');
+      labelEl.textContent = opts.showValueText;
+      svg.appendChild(labelEl);
+    }
+
+    var wrap = el('div', {class:'vector-scene-wrap'});
+    wrap.appendChild(svg);
+    if(opts.labelA || opts.labelB){
+      var legend = el('div', {class:'vector-scene-legend'});
+      if(opts.labelA) legend.appendChild(el('span', {style:{color:colorA}}, '● ' + opts.labelA));
+      if(opts.labelB) legend.appendChild(el('span', {style:{color:colorB}}, '● ' + opts.labelB));
+      wrap.appendChild(legend);
+    }
+    return wrap;
+  }
+};
+
+/* ============================================================
+   4) MASCOT — 루미 + 말풍선 (assets/lumi.png 없어도 graceful fallback)
+   ============================================================ */
+var MASCOT = {
+  mountMini: function(){
+    var host = document.getElementById('mascotMini');
+    if(!host || host.childNodes.length) return;
+    var img = el('img', {alt:'', class:'mascot-mini-img', style:{width:'100%',height:'100%',objectFit:'cover',display:'block',borderRadius:'50%'}, src:'assets/lumi.png'});
+    img.addEventListener('error', function(){
+      host.classList.add('mascot-fallback');
+      img.remove();
+    });
+    host.appendChild(img);
+  },
+  bubble: function(container, text, opts){
+    opts = opts || {};
+    var wrap = el('div', {class:'mascot-row'});
+    var avatar = el('span', {class:'mascot-avatar'});
+    var img = el('img', {alt:'루미'});
+    img.src = 'assets/lumi.png';
+    img.addEventListener('error', function(){
+      avatar.classList.add('mascot-fallback');
+      img.remove();
+    });
+    avatar.appendChild(img);
+    var bubble = el('div', {class:'mascot-bubble' + (opts.tone?(' tone-'+opts.tone):'')}, text);
+    wrap.appendChild(avatar);
+    wrap.appendChild(bubble);
+    container.appendChild(wrap);
+    return wrap;
+  }
+};
+
+/* ============================================================
+   5) FX — tween/파티클(게임필), 자체 구현, 라이브러리 금지
+   ============================================================ */
+var FX = {
+  reducedMotion: (function(){
+    try{ return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; }
+  })(),
+  easeOutCubic: function(t){ return 1 - Math.pow(1-t, 3); },
+  easeOutBack: function(t){ var c1=1.70158, c3=c1+1; return 1 + c3*Math.pow(t-1,3) + c1*Math.pow(t-1,2); },
+  easeInOutQuad: function(t){ return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; },
+  tween: function(opts){
+    var duration = FX.reducedMotion ? 1 : (opts.duration || 300);
+    var start = null;
+    var easing = opts.easing || FX.easeOutCubic;
+    function frame(ts){
+      if(start === null) start = ts;
+      var t = Math.min(1, (ts-start)/duration);
+      opts.onUpdate(easing(t));
+      if(t < 1) requestAnimationFrame(frame);
+      else if(opts.onDone) opts.onDone();
+    }
+    requestAnimationFrame(frame);
+  },
+  pop: function(node){
+    if(!node) return;
+    node.classList.remove('fx-pop'); void node.offsetWidth;
+    node.classList.add('fx-pop');
+  },
+  shake: function(node){
+    if(!node) return;
+    node.classList.remove('fx-shake'); void node.offsetWidth;
+    node.classList.add('fx-shake');
+  },
+  confetti: function(container, colors){
+    if(FX.reducedMotion) return;
+    colors = colors || ['#ff4d8b','#1a3a3a','#b8a4ed','#ffb084','#e8b94a','#2ea043'];
+    var n = 16;
+    for(var i=0;i<n;i++){
+      (function(i){
+        var piece = el('span', {class:'confetti-piece'});
+        piece.style.background = colors[i % colors.length];
+        piece.style.left = '50%';
+        piece.style.top = '50%';
+        container.style.position = container.style.position || 'relative';
+        container.appendChild(piece);
+        var angle = Math.random()*Math.PI*2;
+        var dist = 36 + Math.random()*60;
+        var dx = Math.cos(angle)*dist, dy = Math.sin(angle)*dist - 16;
+        FX.tween({
+          duration: 450 + Math.random()*200,
+          easing: FX.easeOutCubic,
+          onUpdate: function(t){
+            piece.style.transform = 'translate('+(dx*t)+'px,'+(dy*t)+'px) rotate('+(t*260)+'deg)';
+            piece.style.opacity = String(1-t);
+          },
+          onDone: function(){ piece.remove(); }
+        });
+      })(i);
+    }
+  },
+  countUp: function(node, from, to, opts){
+    opts = opts || {};
+    FX.tween({
+      duration: opts.duration || 500,
+      easing: FX.easeOutBack,
+      onUpdate: function(t){ node.textContent = Math.round(from + (to-from)*t) + (opts.suffix||''); },
+      onDone: opts.onDone
+    });
+  },
+  /* Canvas 2D 파티클 버스트(게임필 6.4) — 이어말하기 성공 등에 사용.
+     anchorEl 중심에서 잠깐 터졌다 사라지는 작은 캔버스(라이브러리 없이 rAF 직접 구현). */
+  canvasBurst: function(anchorEl, opts){
+    if(FX.reducedMotion || !anchorEl) return;
+    opts = opts || {};
+    var colors = opts.colors || ['#2ea043','#2f6df0','#e8b94a','#ff4d8b'];
+    var rect = anchorEl.getBoundingClientRect();
+    var size = 180;
+    var canvas = document.createElement('canvas');
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = size*dpr; canvas.height = size*dpr;
+    canvas.style.position = 'fixed';
+    canvas.style.left = (rect.left + rect.width/2 - size/2) + 'px';
+    canvas.style.top = (rect.top + rect.height/2 - size/2) + 'px';
+    canvas.style.width = size + 'px'; canvas.style.height = size + 'px';
+    canvas.style.pointerEvents = 'none';
+    canvas.style.zIndex = '70';
+    document.body.appendChild(canvas);
+    var ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    var n = opts.count || 16;
+    var parts = [];
+    for(var i=0;i<n;i++){
+      var angle = Math.random()*Math.PI*2, speed = 1.2 + Math.random()*2.0;
+      parts.push({vx:Math.cos(angle)*speed, vy:Math.sin(angle)*speed - 1.2, color: colors[i % colors.length]});
+    }
+    var start = null, durationMs = 650;
+    function frame(ts){
+      if(start === null) start = ts;
+      var t = (ts-start)/durationMs;
+      ctx.clearRect(0,0,size,size);
+      if(t < 1){
+        parts.forEach(function(p){
+          var x = size/2 + p.vx*t*46, y = size/2 + p.vy*t*46 + 24*t*t*46;
+          ctx.globalAlpha = Math.max(0, 1-t);
+          ctx.fillStyle = p.color;
+          ctx.fillRect(x-3, y-3, 6, 6);
+        });
+        ctx.globalAlpha = 1;
+        requestAnimationFrame(frame);
+      } else {
+        canvas.remove();
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+};
+
+/* ============================================================
+   6) SIM — 속성벡터·코사인 유사도 + 단어망 조회
+   ============================================================ */
+var SIM = {
+  attrsOf: function(word){
+    var w = resolveWord(word);
+    return w ? DATA.words[w] : null;
+  },
+  /* 속성 체크표(AttrTable) — 두 단어를 나란히, 공통(둘 다 1) 속성 점등.
+     container에 표를 붙이고 {commonAttrs} 를 반환한다. */
+  AttrTable: function(container, wordA, wordB){
+    var va = SIM.attrsOf(wordA), vb = SIM.attrsOf(wordB);
+    var wrap = el('div', {class:'attr-table-wrap'});
+    var table = el('table', {class:'attr-table'});
+    var thead = el('tr', {});
+    thead.appendChild(el('th', {}, '속성'));
+    thead.appendChild(el('th', {}, wordA));
+    thead.appendChild(el('th', {}, wordB));
+    table.appendChild(thead);
+    DATA.attributes.forEach(function(name, i){
+      var a = va[i], b = vb[i];
+      var tr = el('tr', {class: (a===1 && b===1) ? 'attr-row-common' : ''});
+      tr.appendChild(el('td', {class:'attr-name'}, name));
+      tr.appendChild(el('td', {}, el('span', {class:'attr-cell ' + (a?'on':'off')}, a ? '✓ 있음' : '— 없음')));
+      tr.appendChild(el('td', {}, el('span', {class:'attr-cell ' + (b?'on':'off')}, b ? '✓ 있음' : '— 없음')));
+      table.appendChild(tr);
+    });
+    wrap.appendChild(table);
+    container.appendChild(wrap);
+    var common = DATA.attributes.filter(function(name, i){ return va[i]===1 && vb[i]===1; });
+    return {commonAttrs: common};
+  },
+  /* 속성 체크표 압축판(AttrTableCompact) — W2·W3 개정: 32속성 전행 대신 두 단어 중
+     하나라도 가진 속성(합집합)만 표시하고, 둘 다 0인 속성은 "N개 접힘" 한 줄로 존재만
+     알린다(기본 접힘, 탭 시 펼침). 좁은 화면에서는 CSS로 2단 그리드로 재배치된다. */
+  AttrTableCompact: function(container, wordA, wordB){
+    var va = SIM.attrsOf(wordA), vb = SIM.attrsOf(wordB);
+    var wrap = el('div', {class:'screen-block'});
+    wrap.appendChild(el('p', {class:'muted', style:{margin:'0 0 6px'}}, '속성 비교: ' + wordA + ' · ' + wordB + ' (둘 중 하나라도 가진 속성만)'));
+    var grid = el('div', {class:'attr-compact-grid'});
+    var common = [], hidden = [];
+    DATA.attributes.forEach(function(name, i){
+      var a = va[i], b = vb[i];
+      if(a !== 1 && b !== 1){ hidden.push(name); return; }
+      if(a === 1 && b === 1) common.push(name);
+      var row = el('div', {class:'attr-compact-row' + (a===1 && b===1 ? ' common' : '')});
+      row.appendChild(el('span', {class:'name'}, name));
+      var vals = el('span', {class:'vals'});
+      vals.appendChild(el('span', {class:'val ' + (a?'on':'off')}, a ? '✓' : '—'));
+      vals.appendChild(el('span', {class:'val ' + (b?'on':'off')}, b ? '✓' : '—'));
+      row.appendChild(vals);
+      grid.appendChild(row);
+    });
+    wrap.appendChild(grid);
+    if(hidden.length){
+      var open = false;
+      var hiddenText = el('p', {class:'muted', style:{display:'none', fontSize:'13px'}}, hidden.join(', '));
+      var toggle = el('button', {type:'button', class:'btn btn-ghost btn-sm', 'aria-expanded':'false'},
+        '둘 다 없는 속성 ' + hidden.length + '개 접힘');
+      toggle.addEventListener('click', function(){
+        open = !open;
+        hiddenText.style.display = open ? '' : 'none';
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        toggle.textContent = '둘 다 없는 속성 ' + hidden.length + '개 ' + (open ? '펼침' : '접힘');
+      });
+      wrap.appendChild(toggle);
+      wrap.appendChild(hiddenText);
+    }
+    container.appendChild(wrap);
+    return {commonAttrs: common};
+  }
+};
+
+/* ============================================================
+   7) GAME — 코사인 이어말하기 (타이머·콤보·점수) — 9.2 · [이미지] 규칙
+   W4 게임 채점 한정 온라인 어댑터(§B W4): 시작 모달에서 프록시 핑 -> 성공 시
+   온라인(Gemini 임베딩 경유) 채점, 실패 시 기존 속성벡터 채점(오프라인)으로
+   자동 전환. 게임 중 연속 2회 실패해도 동일하게 폴백한다(D-8 게이팅과는 별도 관심사).
+   ============================================================ */
+var GAME = {
+  THRESHOLDS: {easy:55, normal:60, hard:70},
+  timerHandle: null,
+  live: null,
+  onTick: null,  /* 현재 마운트된 W4 화면이 갈아끼우는 렌더 콜백 (화면 이동 후 복귀해도 갱신되도록) */
+  mounted: false,  /* W4 화면이 실제로 마운트돼 있는지(D-8 게이팅 홀 수정) */
+  failStreak: 0,   /* 온라인 채점 연속 실패 횟수(판마다 리셋) */
+
+  pickStartWord: function(){
+    var keys = Object.keys(DATA.words);
+    return keys[Math.floor(Math.random()*keys.length)];
+  },
+  start: function(difficulty){
+    GAME.stop();
+    GAME.failStreak = 0;
+    var threshold = GAME.THRESHOLDS[difficulty] || 60;
+    var w0 = GAME.pickStartWord();
+    var used = {}; used[w0] = true;
+    GAME.live = {current:w0, used:used, chain:[w0], combo:0, score:0, timeLeft:60, threshold:threshold, difficulty:difficulty, running:true};
+    GAME.timerHandle = setInterval(function(){
+      if(!GAME.live || !GAME.live.running) return;
+      GAME.live.timeLeft -= 1;
+      if(GAME.live.timeLeft <= 0){ GAME.live.timeLeft = 0; GAME.finish(); }
+      if(GAME.onTick) GAME.onTick();
+    }, 1000);
+  },
+  /* 타이머만 멈춘다(진행 저장 없음) — "그만하기"에서 사용 */
+  stop: function(){
+    if(GAME.timerHandle){ clearInterval(GAME.timerHandle); GAME.timerHandle = null; }
+    if(GAME.live) GAME.live.running = false;
+  },
+  /* 화면 이탈(unmount) 시 호출 — 진행 중인 판을 stop()으로 무효화하고, 마운트 상태·
+     렌더 콜백을 함께 끊는다. G3/D-8 게이팅 홀 수정의 핵심: 이 훅이 배선돼 있어야
+     "이탈해도 타이머가 백그라운드에서 계속 돌아 완료 처리되는" 결함이 사라진다. */
+  onScreenExit: function(){
+    GAME.stop();
+    GAME.mounted = false;
+    GAME.onTick = null;
+  },
+  /* 자연 종료(60초 소진) — 완료 처리 + 최고점 저장. 9.5 완료 조건.
+     gameRecordable()로 "W4가 실제로 마운트된 상태에서 60초를 소진했는지"를 한 번 더
+     방어적으로 확인한다 — unmount 경로에서는 onScreenExit가 이미 타이머를 지우므로
+     이 tick 자체가 발생하지 않지만, T6 게이트가 요구하는 이중 방어를 만족시킨다. */
+  finish: function(){
+    if(GAME.timerHandle){ clearInterval(GAME.timerHandle); GAME.timerHandle = null; }
+    if(!GAME.live) return;
+    GAME.live.running = false;
+    var elapsed = 60 - GAME.live.timeLeft;
+    if(gameRecordable(GAME.mounted, elapsed)){
+      var st = STATE.screen('W4');
+      st.plays = (st.plays||0) + 1;
+      st.played = true;
+      if(GAME.live.score > (st.best||0)) st.best = GAME.live.score;
+      STATE.save();
+      refreshNav();
+    }
+    if(GAME.onTick) GAME.onTick();
+  },
+  /* 오프라인 채점(기존 속성벡터 142단어 + 후보 안내) — 온라인 모드에서도 요청 실패 시
+     이 경로로 그 제출을 마저 처리한다(폴백). input은 이미 위생 필터를 통과한 문자열. */
+  scoreOffline: function(input, live){
+    var resolved = resolveWord(input);
+    if(!resolved){
+      return {type:'unknown', candidates: topCandidates(live.current, 3)};
+    }
+    if(live.used[resolved]){
+      return {type:'reused', word:resolved};
+    }
+    var cosVal = wordCosine(live.current, resolved);
+    var score = gameScore(cosVal);
+    if(score >= live.threshold) return applyGameSuccess(live, resolved, score);
+    return applyGameFail(live, resolved, score);
+  },
+  /* 오프라인 모드 제출(동기) — 기존 로직 그대로, scoreOffline으로 위임만 정리 */
+  submit: function(raw){
+    var live = GAME.live;
+    if(!live || !live.running) return {type:'inactive'};
+    var input = (raw||'').trim();
+    if(!input) return {type:'empty'};
+    return GAME.scoreOffline(input, live);
+  },
+  /* 온라인 모드 제출(비동기) — 프록시로 현재 단어(a)·입력(b)을 보내 score를 받는다.
+     성공/콤보/시간보너스 효과는 applyGameSuccess/applyGameFail로 오프라인과 동일하게
+     처리한다(채점 소스만 다르다). 요청 실패·타임아웃이면 그 제출은 오프라인 채점으로
+     마저 처리하고, 연속 실패가 fallbackDecision 기준에 닿으면 모드 자체를 offline으로
+     전환한다(진행·점수·timeLeft는 그대로 유지). */
+  submitOnline: function(raw, cb){
+    var live = GAME.live;
+    if(!live || !live.running){ cb({type:'inactive'}); return; }
+    var input = sanitizeInput(raw);
+    if(!input){ cb({type:'empty'}); return; }
+    if(live.used[input]){ cb({type:'reused', word:input}); return; }
+    fetchSimScore(live.current, input, function(err, result, timedOut){
+      if(err){
+        GAME.failStreak += 1;
+        var fellBack = fallbackDecision(GAME.failStreak, !!timedOut);
+        if(fellBack){
+          var st = STATE.screen('W4');
+          st.mode = 'offline';
+          STATE.save();
+        }
+        cb(GAME.scoreOffline(input, live), {fellBack: fellBack});
+        return;
+      }
+      GAME.failStreak = 0;
+      var score = result.score;
+      cb(score >= live.threshold ? applyGameSuccess(live, input, score) : applyGameFail(live, input, score));
+    });
+  },
+
+  mount: function(container){
+    GAME.mounted = true;
+    var st = STATE.screen('W4');
+    var wrap = el('div', {class:'screen-block'});
+    container.appendChild(wrap);
+    var els = {};
+
+    function renderIdle(){
+      GAME.onTick = null;
+      wrap.innerHTML = '';
+      var intro = el('div', {class:'game-modal'});
+      intro.appendChild(el('h3', {}, '코사인 이어말하기'));
+      intro.appendChild(el('p', {}, '코사인 유사도? 두 단어의 의미적 유사성을 0~1 사이의 값으로 나타내요. 값이 1에 가까울수록 두 단어의 의미가 비슷해요.'));
+      intro.appendChild(el('p', {}, [el('strong',{},'게임 방법'), el('br'),
+        '현재 단어와 의미상 유사한 명사를 입력하세요', el('br'),
+        '유사도 점수가 난이도 기준 이상이면 성공!', el('br'),
+        '60초 안에 최대한 많은 단어를 연결하세요', el('br'),
+        '연속 성공 시 콤보 보너스 시간 +5초!']));
+      intro.appendChild(el('p', {}, [el('strong',{},'점수 시스템'), el('br'),
+        '60~69점 기본 +10점 · 70~79점 +15점 · 80~89점 +20점 · 90점 이상 +30점', el('br'),
+        '3콤보 이상: 시간 +5초 보너스!']));
+      intro.appendChild(el('p', {}, '여러분이 방금 손으로 계산한 그 코사인 유사도를, 이번엔 진짜 AI의 벡터로 계산해요.'));
+      intro.appendChild(el('p', {class:'muted'}, '최고 점수: ' + (st.best||0) + '점' + (st.played ? ' · 플레이 완료' : '')));
+
+      var modeRow = el('div', {class:'mode-badge-row'});
+      var modeBadge = el('span', {class:'mode-badge', 'aria-live':'polite'}, '연결 확인 중…');
+      modeRow.appendChild(modeBadge);
+      intro.appendChild(modeRow);
+
+      function refreshModeBadge(){
+        var mode = st.mode;
+        modeBadge.className = 'mode-badge' + (mode === 'online' ? ' on' : mode === 'offline' ? ' off' : '');
+        modeBadge.textContent = mode === 'online' ? '온라인 모드' : mode === 'offline' ? '오프라인 모드' : '연결 확인 중…';
+        var oldRetry = modeRow.querySelector('.retry-btn');
+        if(oldRetry) oldRetry.remove();
+        if(mode === 'offline'){
+          var retry = el('button', {type:'button', class:'btn btn-ghost btn-sm retry-btn'}, '다시 연결해보기');
+          retry.addEventListener('click', doPing);
+          modeRow.appendChild(retry);
+        }
+      }
+      function doPing(){
+        st.mode = null; STATE.save(); refreshModeBadge();
+        pingProxy(function(ok){
+          st.mode = ok ? 'online' : 'offline';
+          STATE.save();
+          refreshModeBadge();
+          updateModeBadge();
+        });
+      }
+      refreshModeBadge();
+      doPing();
+
+      var diffLabel = el('div', {class:'thought-label'}, '난이도 선택');
+      intro.appendChild(diffLabel);
+      intro.appendChild(Components.SegToggle({
+        ariaLabel:'난이도 선택',
+        value: st.difficulty,
+        options:[{value:'easy',label:'쉬움(55점)'},{value:'normal',label:'보통(60점)'},{value:'hard',label:'어려움(70점)'}],
+        onChange:function(v){ st.difficulty = v; STATE.save(); }
+      }));
+      var startBtn = el('button', {type:'button', class:'btn btn-primary', style:{marginTop:'var(--sp-md)'}}, '게임 시작');
+      startBtn.addEventListener('click', function(){
+        GAME.start(st.difficulty);
+        buildPlayingShell();
+        refreshChain();
+        renderHUD();
+        if(els.input) els.input.focus();
+      });
+      intro.appendChild(startBtn);
+      wrap.appendChild(intro);
+    }
+
+    function buildPlayingShell(){
+      wrap.innerHTML = '';
+      var hud = el('div', {class:'game-hud'});
+      els.timeNum = el('span', {class:'hud-num'}, '60');
+      els.comboNum = el('span', {class:'hud-num'}, '0');
+      els.scoreNum = el('span', {class:'hud-num'}, '0');
+      hud.appendChild(el('div', {class:'hud-chip'}, [els.timeNum, '초 남음']));
+      hud.appendChild(el('div', {class:'hud-chip'}, [els.comboNum, '콤보']));
+      hud.appendChild(el('div', {class:'hud-chip'}, [els.scoreNum, '점']));
+      els.modeBadge = el('span', {class:'mode-badge', 'aria-live':'polite'}, '');
+      hud.appendChild(els.modeBadge);
+      wrap.appendChild(hud);
+      updateModeBadge();
+
+      els.timerFill = el('span', {class:'fill'});
+      els.timerTrack = el('div', {class:'timer-track'}, els.timerFill);
+      wrap.appendChild(els.timerTrack);
+
+      els.cwWord = el('div', {class:'cw-word'}, GAME.live ? GAME.live.current : '');
+      els.currentCard = el('div', {class:'current-word-card'}, [el('div', {class:'cw-label'}, '현재 단어'), els.cwWord]);
+      wrap.appendChild(els.currentCard);
+
+      els.meterHost = el('div', {});
+      wrap.appendChild(els.meterHost);
+
+      var inputRow = el('div', {class:'game-input-row'});
+      els.input = el('input', {type:'text', 'aria-label':'유사한 명사 입력', autocomplete:'off'});
+      var submitBtn = el('button', {type:'button', class:'btn btn-primary'}, '제출');
+      function setBusy(busy){
+        els.input.disabled = busy;
+        setDisabled(submitBtn, busy);
+        submitBtn.classList.toggle('fx-pulse', busy);
+        submitBtn.textContent = busy ? '채점 중…' : '제출';
+      }
+      function doSubmit(){
+        if(!GAME.live || !GAME.live.running) return;
+        var val = els.input.value;
+        els.input.value = '';
+        if(st.mode === 'online'){
+          setBusy(true);
+          GAME.submitOnline(val, function(res, meta){
+            setBusy(false);
+            handleResult(res);
+            if(meta && meta.fellBack){
+              updateModeBadge();
+              toast('연결이 원활하지 않아 오프라인 모드로 전환했어요.');
+            }
+            els.input.focus();
+          });
+        } else {
+          handleResult(GAME.submit(val));
+          els.input.focus();
+        }
+      }
+      submitBtn.addEventListener('click', doSubmit);
+      els.input.addEventListener('keydown', function(e){
+        if(e.isComposing || e.keyCode === 229) return;
+        if(e.key === 'Enter'){ e.preventDefault(); doSubmit(); }
+      });
+      inputRow.appendChild(els.input);
+      inputRow.appendChild(submitBtn);
+      wrap.appendChild(inputRow);
+
+      els.feedback = el('div', {class:'game-feedback', 'aria-live':'polite'});
+      wrap.appendChild(els.feedback);
+      els.candidates = el('div', {class:'candidate-row'});
+      wrap.appendChild(els.candidates);
+      els.chainWrap = el('div', {class:'chain-wrap'});
+      wrap.appendChild(els.chainWrap);
+
+      var stopBtn = el('button', {type:'button', class:'btn btn-secondary btn-sm'}, '중단하고 나가기');
+      stopBtn.addEventListener('click', function(){ GAME.stop(); renderIdle(); });
+      wrap.appendChild(stopBtn);
+
+      GAME.onTick = function(){
+        if(GAME.live && GAME.live.running){ renderHUD(); }
+        else { renderDone(); }
+      };
+    }
+
+    function updateModeBadge(){
+      if(!els.modeBadge) return;
+      var mode = st.mode;
+      els.modeBadge.className = 'mode-badge' + (mode === 'online' ? ' on' : mode === 'offline' ? ' off' : '');
+      els.modeBadge.textContent = mode === 'online' ? '온라인' : mode === 'offline' ? '오프라인' : '확인 중';
+    }
+
+    function refreshChain(newWord){
+      if(!els.chainWrap || !GAME.live) return;
+      els.chainWrap.innerHTML = '';
+      GAME.live.chain.forEach(function(w){
+        els.chainWrap.appendChild(el('span', {class:'chain-word' + (w===newWord?' chain-new':'')}, w));
+      });
+    }
+
+    function handleResult(res){
+      if(res.type === 'inactive' || res.type === 'empty') return;
+      if(res.type === 'unknown'){
+        els.feedback.textContent = '그 단어는 아직 없어요. 이런 단어는 어때요?';
+        els.feedback.className = 'game-feedback bad';
+        els.candidates.innerHTML = '';
+        res.candidates.forEach(function(c){
+          var chip = el('button', {type:'button', class:'chip'}, c);
+          chip.addEventListener('click', function(){ els.input.value = c; els.input.focus(); });
+          els.candidates.appendChild(chip);
+        });
+        return;
+      }
+      els.candidates.innerHTML = '';
+      if(res.type === 'reused'){
+        els.feedback.textContent = '"' + res.word + '"' + JOSA.eunNeun(res.word) + ' 이미 사용했어요. 다른 단어를 입력해 보세요.';
+        els.feedback.className = 'game-feedback bad';
+        return;
+      }
+      if(res.type === 'success'){
+        els.feedback.textContent = '성공! "' + res.word + '" 유사도 ' + res.score + '점 (+' + res.points + '점)' + (res.comboBonus ? ' · ' + res.combo + '콤보 보너스 +5초!' : '');
+        els.feedback.className = 'game-feedback ok';
+        els.meterHost.innerHTML = '';
+        els.meterHost.appendChild(Components.SimilarityMeter({value: res.score/100, label: res.score + '점'}));
+        FX.pop(els.currentCard);
+        FX.canvasBurst(els.currentCard);
+        refreshChain(res.word);
+        renderHUD();
+        return;
+      }
+      if(res.type === 'fail'){
+        els.feedback.textContent = '아쉬워요. 유사도 ' + res.score + '점 (기준 ' + GAME.live.threshold + '점 미만). 다시 시도!';
+        els.feedback.className = 'game-feedback bad';
+        els.meterHost.innerHTML = '';
+        els.meterHost.appendChild(Components.SimilarityMeter({value: res.score/100, label: res.score + '점', fail:true}));
+        FX.shake(els.currentCard);
+        renderHUD();
+      }
+    }
+
+    function renderHUD(){
+      var live = GAME.live;
+      if(!live || !els.timeNum) return;
+      els.timeNum.textContent = String(live.timeLeft);
+      els.comboNum.textContent = String(live.combo);
+      els.scoreNum.textContent = String(live.score);
+      els.timerFill.style.width = Math.max(0, (live.timeLeft/60)*100) + '%';
+      var low = live.timeLeft <= 10 && live.timeLeft > 0;
+      els.timerTrack.classList.toggle('low', low);
+      els.timerTrack.classList.toggle('fx-pulse', low);
+      els.cwWord.textContent = live.current;
+    }
+
+    function renderDone(){
+      wrap.innerHTML = '';
+      var summary = el('div', {class:'game-summary'});
+      summary.appendChild(el('div', {class:'muted'}, '이번 판 점수'));
+      summary.appendChild(el('div', {class:'summary-score'}, String(GAME.live ? GAME.live.score : 0)));
+      summary.appendChild(el('p', {}, '최고 점수: ' + (st.best||0) + '점 · 플레이 ' + (st.plays||0) + '회'));
+      var again = el('button', {type:'button', class:'btn btn-primary'}, '다시 하기');
+      again.addEventListener('click', function(){ renderIdle(); });
+      summary.appendChild(again);
+      wrap.appendChild(summary);
+      FX.confetti(summary);
+    }
+
+    if(GAME.live && GAME.live.running){
+      buildPlayingShell(); refreshChain(); renderHUD();
+    } else if(GAME.live && !GAME.live.running && GAME.live.timeLeft === 0){
+      renderDone();
+    } else {
+      renderIdle();
+    }
+  }
+};
+
+/* ============================================================
+   8) MORPH — 형태소 토큰 편집판(MorphBoard) — [이미지] 인터랙션 그대로
+   클릭=포함/제외, Shift+클릭=합치기 선택, 더블클릭=직접 수정,
+   Ctrl+클릭=기본형→명사, ✂=분리. 조사·어미 자동 분리(기본 제외 후보).
+   터치 대체(6.5): 롱프레스=합치기 선택, 두 번 탭=수정, 토큰 옆 아이콘
+   버튼(🔗합치기·명사·✂분리·✏수정)으로 마우스 없이도 전부 가능.
+   ============================================================ */
+var MORPH = {
+  POS_GROUP: {
+    NNG:'noun',
+    JX:'particle', JKS:'particle', JKO:'particle', JKB:'particle', JKG:'particle', JC:'particle',
+    VV:'verb', VA:'adj',
+    EC:'ending', EF:'ending', ETM:'ending', ETN:'ending',
+    MAG:'adv', MM:'adv'
+  },
+  /* 품사 태그 한글 라벨화(2026-07-17 확정) — 토큰 위 칩·aria-label의 원시 코드(NNG·JX…) 대신
+     이 라벨을 쓴다. POS_GROUP 색 계열은 그대로 유지. */
+  POS_LABEL: {noun:'명사', particle:'조사', verb:'동사', adj:'형용사', ending:'어미', adv:'부사'},
+  posGroup: function(pos){ return MORPH.POS_GROUP[pos] || 'adv'; },
+  defaultIncluded: function(pos){ return pos === 'NNG'; },
+  armedIndex: {},  /* sentenceIdx -> tokenIndex, 합치기 대기중(한 번에 하나) */
+
+  ensureState: function(idx){
+    var st = STATE.screen('S4');
+    var cur = st.sentences[idx];
+    /* B7: 손상값 방어 -- 배열 + 각 원소가 최소한의 토큰 형태(surface/pos/included)를
+       갖췄는지만 확인한다. 변조·이종 저장분이면 원본 데이터로 재빌드한다. */
+    var valid = Array.isArray(cur) && cur.length > 0 && cur.every(function(t){
+      return t && typeof t === 'object' && typeof t.surface === 'string' && typeof t.pos === 'string' && typeof t.included === 'boolean';
+    });
+    if(!valid){
+      var src = DATA.sentences[idx].tokens;
+      st.sentences[idx] = src.map(function(t, i){
+        return {id:'t'+idx+'_'+i, surface:t.surface, pos:t.pos, lemma:t.lemma || null,
+                included: MORPH.defaultIncluded(t.pos), armed:false, baseApplied:false, nounStem:null, parts:null};
+      });
+      STATE.save();
+    }
+    return st.sentences[idx];
+  },
+
+  render: function(container, idx){
+    var tokens = MORPH.ensureState(idx);
+    /* T9·G4: armed(합치기 대기)는 화면 세션 안에서만 유효하다. 저장분에 armed:true가 남아있으면
+       (armedIndex는 메모리 변수라 새로고침 후 소실되므로) 마운트 시 일괄 해제해 보라색 토큰
+       잔류·이중 대기를 막는다. */
+    var hadArmed = false;
+    tokens.forEach(function(t){ if(t.armed){ t.armed = false; hadArmed = true; } });
+    MORPH.armedIndex[idx] = null;
+    if(hadArmed) STATE.save();
+    var text = DATA.sentences[idx].text;
+    var wrap = el('div', {class:'screen-block'});
+    wrap.appendChild(el('h3', {style:{fontSize:'15px'}}, '예시 문장 ' + (idx+1) + ' — "' + text + '"'));
+    wrap.appendChild(el('div', {class:'morph-instructions'},
+      '클릭 → 포함/제외 · Shift+클릭(또는 길게 누르기·🔗버튼) → 합치기(2개 선택 시 자동 합침) · ' +
+      '더블클릭(또는 두 번 탭·✏버튼) → 직접 수정 · Ctrl+클릭(또는 "명사"버튼) → 동사·형용사 기본형을 명사로 · ✂ → 분리'));
+
+    var board = el('div', {class:'morph-board'});
+    var resultHost = el('div', {class:'morph-result'});
+    var confirmBtn = el('button', {type:'button', class:'btn btn-secondary', style:{marginTop:'8px'}});
+    wrap.appendChild(board);
+    wrap.appendChild(resultHost);
+    wrap.appendChild(confirmBtn);
+    container.appendChild(wrap);
+
+    function findIndexById(id){ for(var i=0;i<tokens.length;i++){ if(tokens[i].id===id) return i; } return -1; }
+
+    function toggleInclude(id){
+      var i = findIndexById(id);
+      if(i<0) return;
+      tokens[i].included = !tokens[i].included;
+      STATE.save(); renderBoard(id);
+    }
+
+    function armForMerge(id){
+      var i = findIndexById(id);
+      if(i<0) return;
+      var prevIdx = MORPH.armedIndex[idx];
+      if(prevIdx == null){
+        MORPH.armedIndex[idx] = i; tokens[i].armed = true; renderBoard(id); return;
+      }
+      if(prevIdx === i){
+        tokens[i].armed = false; MORPH.armedIndex[idx] = null; renderBoard(id); return;
+      }
+      if(Math.abs(prevIdx - i) === 1){
+        var lo = Math.min(prevIdx, i), hi = Math.max(prevIdx, i);
+        var merged = mergeTokens(tokens[lo], tokens[hi]);
+        merged.id = 't' + idx + '_m' + lo + '_' + hi + '_' + tokens.length;
+        merged.included = true; merged.armed = false; merged.baseApplied = false; merged.nounStem = null;
+        tokens.splice(lo, 2, merged);
+        MORPH.armedIndex[idx] = null;
+        STATE.save(); renderBoard(merged.id);
+        toast('"' + merged.surface + '"' + JOSA.euroRo(merged.surface) + ' 합쳤어요.');
+      } else {
+        tokens[prevIdx].armed = false;
+        tokens[i].armed = true;
+        MORPH.armedIndex[idx] = i;
+        renderBoard(id);
+        toast('바로 옆에 있는 토큰끼리만 합칠 수 있어요. 새로 선택했어요.');
+      }
+    }
+
+    function applyBaseForm(id){
+      var i = findIndexById(id);
+      if(i<0) return;
+      var t = tokens[i];
+      if(t.pos !== 'VV' && t.pos !== 'VA') return;
+      if(t.baseApplied){ t.baseApplied = false; t.nounStem = null; STATE.save(); renderBoard(id); return; }
+      var out = toBaseForm(t);
+      if(!out.baseApplied){ toast('"' + t.surface + '"' + JOSA.eunNeun(t.surface) + ' 명사 어근으로 바꿀 수 없어요(고유어 동사).'); return; }
+      t.baseApplied = true; t.nounStem = out.nounStem; t.included = true;
+      STATE.save(); renderBoard(id);
+    }
+
+    function splitTok(id){
+      var i = findIndexById(id);
+      if(i<0) return;
+      var parts = splitToken(tokens[i]);
+      if(!parts){ toast('이 토큰은 나눌 수 없어요(원래부터 하나의 토큰).'); return; }
+      var a = {}; for(var k in parts[0]){ a[k] = parts[0][k]; }
+      var b = {}; for(var k2 in parts[1]){ b[k2] = parts[1][k2]; }
+      a.id = tokens[i].id + 'a'; b.id = tokens[i].id + 'b';
+      a.armed = false; b.armed = false;
+      tokens.splice(i, 1, a, b);
+      STATE.save(); renderBoard(a.id);
+    }
+
+    /* E-12: window.prompt() 대신 인라인 입력(토큰 자리에서 확인/취소)으로 직접 수정한다. */
+    var editingId = null;
+    function manualEdit(id){ editingId = id; renderBoard(); }
+    function cancelEdit(id){ editingId = null; renderBoard(id); }
+    function commitEdit(id, val){
+      var i = findIndexById(id);
+      editingId = null;
+      if(i<0){ renderBoard(); return; }
+      var next = (val||'').trim();
+      if(!next){ renderBoard(id); return; }
+      tokens[i].surface = next;
+      tokens[i].lemma = null;
+      STATE.save(); renderBoard(id);
+    }
+
+    function attachTokenGestures(tokenEl, t){
+      var timer = null, longFired = false, startX = 0, startY = 0;
+      tokenEl.addEventListener('pointerdown', function(e){
+        longFired = false; startX = e.clientX; startY = e.clientY;
+        timer = setTimeout(function(){ longFired = true; armForMerge(t.id); }, 550);
+      });
+      tokenEl.addEventListener('pointermove', function(e){
+        if(Math.abs(e.clientX-startX) > 8 || Math.abs(e.clientY-startY) > 8) clearTimeout(timer);
+      });
+      tokenEl.addEventListener('pointerup', function(){ clearTimeout(timer); });
+      tokenEl.addEventListener('pointerleave', function(){ clearTimeout(timer); });
+      tokenEl.addEventListener('click', function(e){
+        if(longFired){ longFired = false; return; }
+        if(e.shiftKey){ armForMerge(t.id); return; }
+        if(e.ctrlKey || e.metaKey){ applyBaseForm(t.id); return; }
+        toggleInclude(t.id);
+      });
+      tokenEl.addEventListener('dblclick', function(e){ e.preventDefault(); manualEdit(t.id); });
+      tokenEl.addEventListener('keydown', function(e){
+        if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); toggleInclude(t.id); }
+      });
+    }
+
+    function renderBoard(focusId){
+      board.innerHTML = '';
+      var focusTokenEl = null;
+      tokens.forEach(function(t){
+        var group = MORPH.posGroup(t.pos);
+        var tokWrap = el('div', {class:'morph-token-wrap'});
+        if(t.id === editingId){
+          tokWrap.appendChild(el('span', {class:'postag pos-' + group}, MORPH.POS_LABEL[group]));
+          var editInput = el('input', {type:'text', class:'morph-edit-input', 'aria-label':'"' + t.surface + '" 새 표면형 입력', value:t.surface});
+          var okBtn = el('button', {type:'button', class:'btn btn-secondary btn-sm'}, '확인');
+          var noBtn = el('button', {type:'button', class:'btn btn-ghost btn-sm'}, '취소');
+          okBtn.addEventListener('click', function(){ commitEdit(t.id, editInput.value); });
+          noBtn.addEventListener('click', function(){ cancelEdit(t.id); });
+          editInput.addEventListener('keydown', function(e){
+            if(e.isComposing || e.keyCode === 229) return;
+            if(e.key === 'Enter'){ e.preventDefault(); commitEdit(t.id, editInput.value); }
+            if(e.key === 'Escape'){ e.preventDefault(); cancelEdit(t.id); }
+          });
+          var editRow = el('div', {class:'morph-edit-row'});
+          editRow.appendChild(editInput); editRow.appendChild(okBtn); editRow.appendChild(noBtn);
+          tokWrap.appendChild(editRow);
+          board.appendChild(tokWrap);
+          return;
+        }
+        tokWrap.appendChild(el('span', {class:'postag pos-' + group}, MORPH.POS_LABEL[group]));
+        var label = t.baseApplied ? (t.nounStem + ' ← ' + t.surface) : t.surface;
+        var cls = 'morph-token ' + (t.included ? 'included' : 'excluded') + (t.armed ? ' armed' : '') + (t.baseApplied ? ' base-applied' : '');
+        var tokBtn = el('button', {type:'button', class:cls,
+          'aria-pressed': t.included ? 'true' : 'false',
+          'aria-label': t.surface + '(' + MORPH.POS_LABEL[group] + '), ' + (t.included?'포함됨':'제외됨') + (t.armed?', 합치기 대기중':'')}, label);
+        attachTokenGestures(tokBtn, t);
+        tokWrap.appendChild(tokBtn);
+        if(focusId && t.id === focusId) focusTokenEl = tokBtn;
+
+        var actions = el('div', {class:'token-actions'});
+        var mergeBtn = el('button', {type:'button', title:'합치기 선택', 'aria-label':'"' + t.surface + '" 합치기 선택'}, '🔗');
+        mergeBtn.addEventListener('click', function(){ armForMerge(t.id); });
+        actions.appendChild(mergeBtn);
+        if(t.pos === 'VV' || t.pos === 'VA'){
+          var baseBtn = el('button', {type:'button', title:'기본형→명사', 'aria-label':'"' + t.surface + '" 기본형을 명사로 변환'}, '명사');
+          baseBtn.addEventListener('click', function(){ applyBaseForm(t.id); });
+          actions.appendChild(baseBtn);
+        }
+        if(t.parts){
+          var splitBtn = el('button', {type:'button', title:'분리', 'aria-label':'"' + t.surface + '" 다시 나누기'}, '✂');
+          splitBtn.addEventListener('click', function(){ splitTok(t.id); });
+          actions.appendChild(splitBtn);
+        }
+        var editBtn = el('button', {type:'button', title:'직접 수정', 'aria-label':'"' + t.surface + '" 직접 수정'}, '✏');
+        editBtn.addEventListener('click', function(){ manualEdit(t.id); });
+        actions.appendChild(editBtn);
+        tokWrap.appendChild(actions);
+
+        board.appendChild(tokWrap);
+      });
+      if(editingId){
+        var focusInput = board.querySelector('.morph-edit-input');
+        if(focusInput) focusInput.focus();
+      } else if(focusTokenEl){
+        focusTokenEl.focus({preventScroll:true});
+      }
+      renderResult();
+      refreshNav();
+    }
+
+    function renderResult(){
+      var included = tokens.filter(function(t){ return t.included; })
+        .map(function(t){ return t.baseApplied ? t.nounStem : (t.lemma || t.surface); });
+      resultHost.innerHTML = '';
+      resultHost.appendChild(el('div', {class:'card-title'}, '지금 포함된 핵심어'));
+      resultHost.appendChild(el('div', {}, included.length ? included.join(', ') : '(1개 이상 포함해 보세요)'));
+      var st4 = STATE.screen('S4');
+      var isConfirmed = !!st4.confirmed[idx];
+      confirmBtn.textContent = isConfirmed ? '이 문장 확정 ✓' : '이 문장 확정하기';
+      confirmBtn.onclick = function(){
+        var st4b = STATE.screen('S4');
+        var ok = included.length > 0;
+        st4b.confirmed[idx] = ok;
+        STATE.save();
+        renderBoard();
+        toast(ok ? '확정했어요.' : '핵심어를 1개 이상 남겨야 확정할 수 있어요.');
+      };
+    }
+
+    renderBoard();
+  }
+};
+
+/* ============================================================
+   9) CLOUD — 워드클라우드(모양·폰트·빈도) — [이미지] 옵션 + FreqTable
+   ============================================================ */
+function pointInPolygon(pts, x, y){
+  var inside = false;
+  for(var i=0,j=pts.length-1;i<pts.length;j=i++){
+    var xi=pts[i][0], yi=pts[i][1], xj=pts[j][0], yj=pts[j][1];
+    var intersect = ((yi>y) !== (yj>y)) && (x < (xj-xi)*(y-yi)/(yj-yi)+xi);
+    if(intersect) inside = !inside;
+  }
+  return inside;
+}
+function buildStarPoints(){
+  var pts = [], outerR=0.95, innerR=0.40;
+  for(var i=0;i<10;i++){
+    var r=(i%2===0)?outerR:innerR;
+    var ang=-Math.PI/2 + i*Math.PI/5;
+    pts.push([Math.cos(ang)*r, Math.sin(ang)*r]);
+  }
+  return pts;
+}
+function buildHeartPoints(){
+  var raw=[], N=120, minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  for(var i=0;i<N;i++){
+    var t=(i/N)*Math.PI*2;
+    var hx=16*Math.pow(Math.sin(t),3);
+    var hy=-(13*Math.cos(t)-5*Math.cos(2*t)-2*Math.cos(3*t)-Math.cos(4*t));
+    raw.push([hx,hy]);
+    if(hx<minX)minX=hx; if(hx>maxX)maxX=hx;
+    if(hy<minY)minY=hy; if(hy>maxY)maxY=hy;
+  }
+  var cx=(minX+maxX)/2, cy=(minY+maxY)/2;
+  var half=Math.max(maxX-minX,maxY-minY)/2;
+  return raw.map(function(p){ return [(p[0]-cx)/half*0.92, (p[1]-cy)/half*0.92]; });
+}
+var STAR_PTS = buildStarPoints();
+var HEART_PTS = buildHeartPoints();
+var SHAPES = {
+  circle: function(x,y){ return x*x+y*y <= 0.90*0.90; },
+  square: function(x,y){ return Math.max(Math.abs(x),Math.abs(y)) <= 0.86; },
+  diamond: function(x,y){ return Math.abs(x)+Math.abs(y) <= 0.95; },
+  cloud: function(x,y){
+    var lobes=[[-0.4,0.12,0.42],[0.0,-0.16,0.5],[0.42,0.12,0.4],[-0.12,0.32,0.4],[0.2,0.32,0.38]];
+    for(var i=0;i<lobes.length;i++){ var dx=x-lobes[i][0], dy=y-lobes[i][1], r=lobes[i][2]; if(dx*dx+dy*dy<=r*r) return true; }
+    return false;
+  },
+  star: function(x,y){ return pointInPolygon(STAR_PTS, x, y); },
+  heart: function(x,y){ return pointInPolygon(HEART_PTS, x, y); }
+};
+var SHAPE_LABEL = {circle:'원형', heart:'하트', star:'별', cloud:'구름', diamond:'다이아', square:'사각형'};
+var FONT_STACKS = {
+  sans: {family:"'Inter',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Segoe UI','Malgun Gothic',Roboto,sans-serif", weight:'700', label:'고딕'},
+  serif:{family:"'Batang','Nanum Myeongjo','Apple SD Gothic Neo',serif", weight:'700', label:'명조'},
+  bold: {family:"'Inter',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Segoe UI','Malgun Gothic',Roboto,sans-serif", weight:'900', label:'굵게'}
+};
+
+/* 9.4 배치(D-7 개정): 빈도 큰 단어부터 중앙 근처, 스파이럴로 이동하며 겹치지 않고
+   모양 마스크 안에 들어가는 자리를 찾는다. 폭은 measureFn(실측, 예: ctx.measureText 래퍼)
+   으로 구한다 -- 글자수 추정(구 ×0.66)을 쓰지 않는다. 자리를 못 찾으면 폰트를 ×0.85씩
+   최대 8단계까지 줄여 재시도하고, 그래도 실패하면 그 단어는 구름에서 생략한다
+   (중앙(0,0) 적층 fallback 없음 -- 겹쳐 그리는 것보다 낫다, T1 게이트).
+   measureFn(word, fontPx) -> 실측 폭(px)은 필수 인자다: 목(mock) 환경엔 canvas가 없으므로
+   폴백 canvas를 만들지 않는다(미주입 시 크래시 허용, sanity-5). 이 함수 자체는 DOM/canvas를
+   전혀 건드리지 않는 순수 함수 -- 실제 측정은 호출부가 주입한 measureFn이 담당한다. */
+function layoutCloud(entries, shapeFn, canvasSize, measureFn){
+  var maxCount = entries.length ? entries[0].count : 1;
+  var minCount = entries.length ? entries[entries.length-1].count : 1;
+  var placed = [];
+  var MAX_SHRINK_STEPS = 8;
+  entries.forEach(function(it, idx){
+    var t = maxCount === minCount ? 1 : (it.count - minCount)/(maxCount - minCount);
+    var baseFontPx = 15 + t*32;
+    var found = null;
+    for(var step=0; step<=MAX_SHRINK_STEPS && !found; step++){
+      var fontPx = baseFontPx * Math.pow(0.85, step);
+      var w = measureFn(it.word, fontPx) + 8;
+      var h = fontPx * 1.2;
+      var maxR = canvasSize*0.62;
+      for(var r=0; r<=maxR && !found; r += 3){
+        var steps2 = Math.max(8, Math.round(r/6));
+        for(var s=0; s<steps2; s++){
+          var ang = (s/steps2)*Math.PI*2 + idx*0.7;
+          var cx = Math.cos(ang)*r, cy = Math.sin(ang)*r;
+          var nx = (cx)/(canvasSize/2), ny = (cy)/(canvasSize/2);
+          var hw = (w/2)/(canvasSize/2), hh = (h/2)/(canvasSize/2);
+          var corners = [[nx-hw,ny-hh],[nx+hw,ny-hh],[nx-hw,ny+hh],[nx+hw,ny+hh]];
+          var okShape = corners.every(function(c){ return shapeFn(c[0], c[1]); });
+          if(!okShape) continue;
+          var box = {x:cx-w/2, y:cy-h/2, w:w, h:h};
+          var overlap = placed.some(function(p){
+            return !(box.x+box.w < p.box.x || box.x > p.box.x+p.box.w || box.y+box.h < p.box.y || box.y > p.box.y+p.box.h);
+          });
+          if(overlap) continue;
+          found = {cx:cx, cy:cy, box:box, fontPx:fontPx};
+          break;
+        }
+      }
+    }
+    if(found){
+      placed.push({word:it.word, count:it.count, fontPx:found.fontPx, x:found.cx, y:found.cy, box:found.box});
+    }
+    /* else: 자리를 못 찾음 -- 생략(중앙(0,0) fallback 없음). 빈도표에는 그대로 남는다. */
+  });
+  return placed;
+}
+
+function rawFrequency(){
+  var freq = {};
+  DATA.sentences.forEach(function(s){ s.tokens.forEach(function(t){ freq[t.surface] = (freq[t.surface]||0) + 1; }); });
+  return freq;
+}
+function filteredFrequency(){
+  var freq = {};
+  DATA.sentences.forEach(function(s){ contentWords(s.tokens).forEach(function(w){ freq[w] = (freq[w]||0) + 1; }); });
+  return freq;
+}
+function freqEntries(useFiltered){
+  var freq = useFiltered ? filteredFrequency() : rawFrequency();
+  return Object.keys(freq).map(function(w){ return {word:w, count:freq[w]}; })
+    .sort(function(a,b){ return b.count - a.count || a.word.localeCompare(b.word); });
+}
+
+var CLOUD_TOP_N = 16; /* E-7 기본값: 상위 16개 표시 */
+var CLOUD = {
+  /* S5 step1(워드클라우드): 모양·폰트·불용어 제거 컨트롤 + 캔버스만 담당.
+     선택(빈도표)은 renderFreqTable로 분리했다(각 step 1뷰포트). */
+  renderCloud: function(container){
+    var st = STATE.screen('S5');
+    var wrap = el('div', {class:'screen-block'});
+    container.appendChild(wrap);
+
+    var controls = el('div', {class:'cloud-controls'});
+    wrap.appendChild(controls);
+
+    var shapeGroup = el('div', {class:'cloud-control-group'});
+    shapeGroup.appendChild(el('label', {}, '모양'));
+    var shapeRow = el('div', {class:'chips-row'});
+    Object.keys(SHAPE_LABEL).forEach(function(key){
+      var chip = el('button', {type:'button', class:'chip' + (st.shape===key?' active':'')}, SHAPE_LABEL[key]);
+      chip.addEventListener('click', function(){
+        st.shape = key; STATE.save();
+        Array.prototype.forEach.call(shapeRow.children, function(c){ c.classList.remove('active'); });
+        chip.classList.add('active');
+        drawCloud();
+      });
+      shapeRow.appendChild(chip);
+    });
+    shapeGroup.appendChild(shapeRow);
+    controls.appendChild(shapeGroup);
+
+    var fontGroup = el('div', {class:'cloud-control-group'});
+    fontGroup.appendChild(el('label', {}, '폰트'));
+    var fontRow = el('div', {class:'chips-row'});
+    Object.keys(FONT_STACKS).forEach(function(key){
+      var chip = el('button', {type:'button', class:'chip' + (st.font===key?' active':'')}, FONT_STACKS[key].label);
+      chip.addEventListener('click', function(){
+        st.font = key; STATE.save();
+        Array.prototype.forEach.call(fontRow.children, function(c){ c.classList.remove('active'); });
+        chip.classList.add('active');
+        drawCloud();
+      });
+      fontRow.appendChild(chip);
+    });
+    fontGroup.appendChild(fontRow);
+    controls.appendChild(fontGroup);
+
+    var stopWrap = el('label', {class:'check-row'});
+    var stopCheck = el('input', {type:'checkbox'});
+    stopCheck.checked = !!st.stopwordFilter;
+    stopWrap.appendChild(stopCheck);
+    stopWrap.appendChild(document.createTextNode('불용어 제거(조사·어미 등)'));
+    controls.appendChild(stopWrap);
+
+    var canvasWrap = el('div', {class:'cloud-canvas-wrap'});
+    var canvasSize = 400;
+    var canvas = el('canvas', {role:'img', 'aria-label':'워드클라우드: 자주 등장한 단어일수록 크게 표시됩니다.'});
+    canvasWrap.appendChild(canvas);
+    wrap.appendChild(canvasWrap);
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = canvasSize*dpr; canvas.height = canvasSize*dpr;
+    canvas.style.width = canvasSize+'px'; canvas.style.height = canvasSize+'px';
+    var ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+
+    function drawCloud(){
+      var entries = freqEntries(st.stopwordFilter).slice(0, CLOUD_TOP_N);
+      var shapeFn = SHAPES[st.shape] || SHAPES.circle;
+      var fontDef = FONT_STACKS[st.font] || FONT_STACKS.sans;
+      /* D-7: 폭은 ctx.measureText 실측(폰트 적용 후 측정) -- 글자수 추정 아님 */
+      function measureFn(word, fontPx){
+        ctx.font = fontDef.weight + ' ' + Math.round(fontPx) + 'px ' + fontDef.family;
+        return ctx.measureText(word).width;
+      }
+      var placed = layoutCloud(entries, shapeFn, canvasSize, measureFn);
+      ctx.clearRect(0,0,canvasSize,canvasSize);
+      var palette = ['#0a0a0a','#1d4fb0','#8a6410','#a2481a','#5b3fa0','#1e6e56'];
+      placed.forEach(function(p, i){
+        ctx.save();
+        ctx.font = fontDef.weight + ' ' + Math.round(p.fontPx) + 'px ' + fontDef.family;
+        ctx.fillStyle = palette[i % palette.length];
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(p.word, canvasSize/2 + p.x, canvasSize/2 + p.y);
+        ctx.restore();
+      });
+      var topWords = entries.slice(0, 5).map(function(e){ return e.word + '(' + e.count + '회)'; }).join(', ');
+      canvas.setAttribute('aria-label', '워드클라우드: 자주 등장한 단어일수록 크게 표시됩니다. 상위 단어: ' + (topWords || '없음') + '.');
+    }
+
+    stopCheck.addEventListener('change', function(){
+      st.stopwordFilter = stopCheck.checked; STATE.save();
+      drawCloud();
+    });
+
+    drawCloud();
+  },
+  /* S5 step2(빈도표): 정확한 횟수 확인 + 상위 8~12개 선택(현행 로직 유지). */
+  renderFreqTable: function(container){
+    var st = STATE.screen('S5');
+    var wrap = el('div', {class:'screen-block'});
+    container.appendChild(wrap);
+
+    var freqHost = el('div', {class:'freq-table-wrap'});
+    wrap.appendChild(freqHost);
+    var selCountMsg = el('p', {class:'muted'});
+    wrap.appendChild(selCountMsg);
+
+    function selectedCount(){ return Object.keys(st.selected).filter(function(k){ return st.selected[k]; }).length; }
+
+    function drawFreqTable(focusWord){
+      freqHost.innerHTML = '';
+      var entries = freqEntries(st.stopwordFilter);
+      var table = el('table', {class:'freq-table'});
+      table.appendChild(el('tr', {}, [el('th',{scope:'col'},'단어'), el('th',{scope:'col'},'횟수')]));
+      var focusRowEl = null;
+      entries.forEach(function(e){
+        var selected = !!st.selected[e.word];
+        var tr = el('tr', {class:'freq-row' + (selected?' selected':''), tabindex:'0', role:'checkbox', 'aria-checked': selected?'true':'false', 'aria-label': e.word + ', ' + e.count + '회, ' + (selected?'선택됨':'선택 안 됨'), 'data-word': e.word});
+        tr.appendChild(el('td', {}, e.word));
+        tr.appendChild(el('td', {class:'num'}, String(e.count)));
+        function toggleSel(){
+          var already = !!st.selected[e.word];
+          if(!already && selectedCount() >= 12){ toast('최대 12개까지 선택할 수 있어요.'); return; }
+          st.selected[e.word] = !already;
+          STATE.save();
+          drawFreqTable(e.word);
+        }
+        tr.addEventListener('click', toggleSel);
+        tr.addEventListener('keydown', function(ev){ if(ev.key==='Enter'||ev.key===' '){ ev.preventDefault(); toggleSel(); } });
+        table.appendChild(tr);
+        if(focusWord && e.word === focusWord) focusRowEl = tr;
+      });
+      freqHost.appendChild(table);
+      if(focusRowEl) focusRowEl.focus({preventScroll:true});
+      var n = selectedCount();
+      selCountMsg.textContent = '선택한 단어: ' + n + '개 (8~12개를 선택하세요)' + (n>=8 && n<=12 ? ' ✓' : '');
+      refreshNav();
+    }
+
+    drawFreqTable();
+  }
+};
+
+/* ============================================================
+   10) TFIDF — 중요도 점수 계산기(§C worked-example 스테퍼): 문장1 핵심어를 한 단어씩
+   ⓐ횟수 → ⓑ×희소 점수 → ⓒ=중요도 점수 3비트로 계산한다. [이전][다음]+진행 점, 자동재생 없음
+   (학생 페이스 제어). 구 탭-공개 표(revealed) 방식은 폐기 — st5.revealed는 더 이상 쓰지
+   않되 읽기만 해도 무해하다(마이그레이션 불요). st5.calcStep으로 진행 위치를 저장한다.
+   ============================================================ */
+var TFIDF = {
+  /* 문장1(포커스) 계산에 필요한 자료. words는 §C "실계산 기준 선정"(등장 순서, 4~6개). */
+  prep: function(){
+    var focusIdx = DATA.focusPair[0];
+    var docsWordLists = DATA.sentences.map(function(sent){ return contentWords(sent.tokens); });
+    var docWords = docsWordLists[focusIdx];
+    return {focusIdx:focusIdx, docsWordLists:docsWordLists, docWords:docWords, words: tfidfStepperWords(), n: docsWordLists.length};
+  },
+  clampStep: function(st5){
+    var total = tfidfStepperTotal();
+    if(typeof st5.calcStep !== 'number' || isNaN(st5.calcStep) || st5.calcStep < 0) st5.calcStep = 0;
+    if(st5.calcStep > total-1) st5.calcStep = total-1;
+    return st5.calcStep;
+  },
+  isComplete: function(){
+    var st5 = STATE.screen('S5');
+    return tfidfStepperComplete(TFIDF.clampStep(st5));
+  },
+  render: function(container, st5){
+    container.innerHTML = '';
+    var data = TFIDF.prep();
+    var words = data.words, total = words.length*3 + 2;
+    var calcStep = TFIDF.clampStep(st5);
+
+    container.appendChild(el('h3', {style:{fontSize:'15px'}}, '중요도 점수 계산기 — 문장1을 단어별로 함께 계산해요'));
+
+    var dotsRow = el('div', {class:'step-dots'});
+    for(var i=0;i<total;i++){ dotsRow.appendChild(el('span', {class:'step-dot'+(i===calcStep?' active':''), 'aria-hidden':'true'})); }
+    container.appendChild(dotsRow);
+    container.appendChild(el('p', {class:'sr-only', 'aria-live':'polite'}, (calcStep+1) + ' / ' + total + ' 단계'));
+
+    var statusHost = el('div', {class:'screen-block'});
+    container.appendChild(statusHost);
+
+    var navRow = el('div', {class:'btn-row'});
+    var prevBtn = el('button', {type:'button', class:'btn btn-secondary'}, '◀ 이전 단계');
+    var nextBtn = el('button', {type:'button', class:'btn btn-primary'}, '다음 단계 ▶');
+    navRow.appendChild(prevBtn); navRow.appendChild(nextBtn);
+    container.appendChild(navRow);
+
+    function goTo(step, focusCls){
+      st5.calcStep = Math.max(0, Math.min(total-1, step));
+      STATE.save();
+      TFIDF.render(container, st5);
+      refreshNav();
+      var target = container.querySelector(focusCls);
+      if(target) target.focus({preventScroll:true});
+    }
+    prevBtn.addEventListener('click', function(){ goTo(calcStep-1, '.btn-row .btn-secondary'); });
+    nextBtn.addEventListener('click', function(){ goTo(calcStep+1, '.btn-row .btn-primary'); });
+    setDisabled(prevBtn, calcStep<=0);
+    setDisabled(nextBtn, calcStep>=total-1);
+
+    if(calcStep === words.length*3){
+      TFIDF.renderFinaleA(statusHost, data);
+    } else if(calcStep === words.length*3 + 1){
+      TFIDF.renderFinaleB(statusHost, data, st5);
+    } else {
+      var wordIdx = Math.floor(calcStep/3), bit = calcStep%3;
+      var w = words[wordIdx];
+      statusHost.appendChild(el('p', {class:'muted'}, '단어 ' + (wordIdx+1) + '/' + words.length + ' · "' + w + '"'));
+      if(bit === 0) TFIDF.renderBitA(statusHost, w, data);
+      else if(bit === 1) TFIDF.renderBitB(statusHost, w, data);
+      else TFIDF.renderBitC(statusHost, w, data, words.slice(0, wordIdx+1));
+    }
+    renderMath(container);
+  },
+  /* ⓐ 횟수: 문장1 원문에서 단어를 하이라이트하고 그 문장 안에서 나온 횟수를 보여준다 */
+  renderBitA: function(container, w, data){
+    container.appendChild(el('div', {class:'screen-prompt'}, 'ⓐ 이 문장에서 "' + w + '"' + JOSA.iGa(w) + ' 몇 번 나왔을까요?'));
+    var sentText = DATA.sentences[data.focusIdx].text;
+    var idx = sentText.indexOf(w);
+    var sentBox = el('p', {class:'card-hairline', style:{fontSize:'16px'}});
+    if(idx < 0){
+      sentBox.textContent = '"' + sentText + '"';
+    } else {
+      sentBox.appendChild(document.createTextNode('"' + sentText.slice(0, idx)));
+      sentBox.appendChild(el('mark', {class:'highlight-chip', style:{fontSize:'inherit'}}, sentText.slice(idx, idx+w.length)));
+      sentBox.appendChild(document.createTextNode(sentText.slice(idx+w.length) + '"'));
+    }
+    container.appendChild(sentBox);
+    var tfVal = tf(w, data.docWords);
+    container.appendChild(el('div', {style:{fontSize:'28px', fontWeight:'800', textAlign:'center', margin:'12px 0'}}, tfVal + '번'));
+  },
+  /* ⓑ ×희소 점수: B의 8문장 스윕 연출을 재사용해 몇 문장에 나오는지 보여주고 희소 점수를 계산 */
+  renderBitB: function(container, w, data){
+    container.appendChild(el('div', {class:'screen-prompt'}, 'ⓑ "' + w + '"' + JOSA.eunNeun(w) + ' 8문장 중 몇 문장에 나올까요?'));
+    var sweepHost = el('div', {class:'screen-block'});
+    container.appendChild(sweepHost);
+    var dfVal = renderSentenceSweep(sweepHost, w, data.docsWordLists);
+    var idfVal = idf(w, data.docsWordLists, 'ratio');
+    var fmt2 = function(v){ return (Math.round(v*100)/100).toFixed(2); };
+    container.appendChild(el('p', {}, el('span', {'data-katex': data.n + ' \\div ' + dfVal + ' \\approx ' + fmt2(idfVal)})));
+    container.appendChild(el('div', {style:{fontSize:'22px', fontWeight:'800', textAlign:'center', margin:'8px 0'}}, '희소 점수 ' + fmt2(idfVal)));
+  },
+  /* ⓒ =중요도 점수: 횟수x희소 점수 조립 + 값 비례 막대 + 지금까지 계산한 단어 누적 순위표 */
+  renderBitC: function(container, w, data, wordsSoFar){
+    var tfVal = tf(w, data.docWords), idfVal = idf(w, data.docsWordLists, 'ratio'), scoreVal = tfVal*idfVal;
+    var fmt2 = function(v){ return (Math.round(v*100)/100).toFixed(2); };
+    container.appendChild(el('div', {class:'screen-prompt'}, 'ⓒ 횟수 × 희소 점수 = 중요도 점수'));
+    container.appendChild(el('p', {}, el('span', {'data-katex': tfVal + ' \\times ' + fmt2(idfVal) + ' \\approx ' + fmt2(scoreVal)})));
+
+    var allScores = wordsSoFar.map(function(ww){ return {word:ww, score: tf(ww, data.docWords)*idf(ww, data.docsWordLists, 'ratio')}; });
+    var maxScore = Math.max.apply(null, allScores.map(function(x){ return x.score; }).concat([0.0001]));
+    var barRow = el('div', {class:'compare-bar-row'});
+    barRow.appendChild(el('div', {class:'compare-bar-label'}, w));
+    var track = el('div', {class:'compare-bar-track'});
+    var fill = el('div', {class:'compare-bar-fill'});
+    track.appendChild(fill);
+    barRow.appendChild(track);
+    barRow.appendChild(el('div', {class:'compare-bar-value'}, fmt2(scoreVal)));
+    container.appendChild(barRow);
+    requestAnimationFrame(function(){ fill.style.width = Math.max(0, Math.min(100, scoreVal/maxScore*100)) + '%'; });
+
+    var ranked = allScores.slice().sort(function(a,b){ return b.score-a.score || a.word.localeCompare(b.word); });
+    var tableWrap = el('div', {class:'screen-block'});
+    tableWrap.appendChild(el('p', {class:'muted'}, '지금까지 계산한 단어 순위'));
+    var list = el('ol', {style:{margin:'0', paddingLeft:'20px'}});
+    ranked.forEach(function(item){
+      list.appendChild(el('li', {style:{fontWeight: item.word===w ? '800' : '600', margin:'2px 0'}}, item.word + ' — ' + fmt2(item.score)));
+    });
+    tableWrap.appendChild(list);
+    container.appendChild(tableWrap);
+  },
+  /* 마무리A(§F-1 스크롤 분할): 완성된 순위표(막대 포함) + 정리 카드 */
+  renderFinaleA: function(container, data){
+    var words = data.words;
+    var fmt2 = function(v){ return (Math.round(v*100)/100).toFixed(2); };
+    var scored = words.map(function(w){ return {word:w, score: tf(w, data.docWords)*idf(w, data.docsWordLists, 'ratio')}; });
+    scored.sort(function(a,b){ return b.score-a.score || a.word.localeCompare(b.word); });
+    container.appendChild(el('h3', {style:{fontSize:'16px'}}, '완성된 순위표'));
+    var maxScore = scored.length ? scored[0].score : 1;
+    scored.forEach(function(item, i){
+      var row = el('div', {class:'compare-bar-row'});
+      row.appendChild(el('div', {class:'compare-bar-label'}, (i+1) + '. ' + item.word));
+      var track = el('div', {class:'compare-bar-track'});
+      var fill = el('div', {class:'compare-bar-fill'});
+      track.appendChild(fill);
+      row.appendChild(track);
+      row.appendChild(el('div', {class:'compare-bar-value'}, fmt2(item.score)));
+      container.appendChild(row);
+      requestAnimationFrame(function(){ fill.style.width = Math.max(0, Math.min(100, item.score/maxScore*100)) + '%'; });
+    });
+    container.appendChild(Components.SummaryCard({color:'cream', title:'정리', body:'가장 중요한 단어 = 문장의 특징이에요.'}));
+  },
+  /* 마무리B(§F-1 스크롤 분할): 워드클라우드 크기 배지 + 문장2 비교 한 줄 */
+  renderFinaleB: function(container, data, st5){
+    var words = data.words;
+    var scored = words.map(function(w){ return {word:w, score: tf(w, data.docWords)*idf(w, data.docsWordLists, 'ratio')}; });
+    scored.sort(function(a,b){ return b.score-a.score || a.word.localeCompare(b.word); });
+    var top = scored[0];
+    if(top){
+      var stopFilter = !!(st5 && st5.stopwordFilter);
+      var allEntries = freqEntries(stopFilter);
+      var topEntries = allEntries.slice(0, CLOUD_TOP_N);
+      var topEntry = topEntries.filter(function(e){ return e.word === top.word; })[0];
+      var badgeHost = el('div', {class:'screen-block'});
+      if(topEntry){
+        var maxCount = topEntries[0].count, minCount = topEntries[topEntries.length-1].count;
+        var t = maxCount===minCount ? 1 : (topEntry.count-minCount)/(maxCount-minCount);
+        var px = 15 + t*32;
+        badgeHost.appendChild(el('p', {class:'muted'}, '가장 중요한 단어 "' + top.word + '"' + JOSA.eunNeun(top.word) + ' 워드클라우드에서는 이만큼 작았어요(적게 나온 단어라서) — 중요도는 크기(자주 나옴)가 아니라 얼마나 드문지에서 나와요:'));
+        badgeHost.appendChild(el('span', {style:{fontSize:px+'px', fontWeight:'700'}}, top.word));
+      } else {
+        badgeHost.appendChild(el('p', {class:'muted'}, '"' + top.word + '"' + JOSA.eunNeun(top.word) + ' 워드클라우드 상위 목록 밖이었어요 — 그만큼 드문 단어예요.'));
+      }
+      container.appendChild(badgeHost);
+    }
+
+    var focusB = DATA.focusPair[1];
+    var docWordsB = data.docsWordLists[focusB];
+    var seenB = {}, wordsB = [];
+    docWordsB.forEach(function(ww){ if(!seenB[ww]){ seenB[ww]=true; wordsB.push(ww); } });
+    var scoredB = wordsB.map(function(ww){ return {word:ww, score: tf(ww, docWordsB)*idf(ww, data.docsWordLists, 'ratio')}; });
+    scoredB.sort(function(a,b){ return b.score-a.score || a.word.localeCompare(b.word); });
+    var topB = scoredB[0];
+    if(top && topB){
+      container.appendChild(el('p', {class:'muted'},
+        '문장2의 1등 단어는 "' + topB.word + '"' + (topB.word===top.word ? ' — 문장1과 같아요!' : ' — 문장1의 1등("' + top.word + '")과 달라요.')));
+    }
+  }
+};
+
+/* ============================================================
+   11) LOGIC — 순수 함수 (검증 대상, window.__TXT 로 노출)
+   data.js(window.__DATA)는 큐레이션 "출제 데이터"로 두고, 이 섹션의
+   함수만 그 위의 알고리즘(코사인·TF·DF·IDF·게임 채점·형태소 편집)을 계산한다.
+   ============================================================ */
+var DATA = window.__DATA;
+
+function cosine(a, b){
+  var dot = 0, na = 0, nb = 0;
+  for(var i=0;i<a.length;i++){ dot += a[i]*b[i]; na += a[i]*a[i]; nb += b[i]*b[i]; }
+  na = Math.sqrt(na); nb = Math.sqrt(nb);
+  if(na === 0 || nb === 0) return 0;
+  return dot/(na*nb);
+}
+
+function resolveWord(w){
+  if(!w) return null;
+  if(DATA.words[w]) return w;
+  var syn = DATA.synonyms[w];
+  if(syn && DATA.words[syn]) return syn;
+  return null;
+}
+
+function wordCosine(w1, w2){
+  var r1 = resolveWord(w1), r2 = resolveWord(w2);
+  if(!r1 || !r2) return null;
+  return cosine(DATA.words[r1], DATA.words[r2]);
+}
+
+function jsRound(x){ return Math.floor(x + 0.5); }
+
+function gameScore(cosVal){ return jsRound(cosVal*100); }
+
+/* 9.2 점수대: 60~69 +10 / 70~79 +15 / 80~89 +20 / 90+ +30.
+   [구현] 쉬움 난이도 임계값(55)은 60 미만이라 표에 없는 55~59 구간이 생긴다
+   -- 성공은 성공이므로 최소 보너스 +5로 채운다. */
+function gamePoints(score){
+  if(score < 60) return 5;
+  if(score < 70) return 10;
+  if(score < 80) return 15;
+  if(score < 90) return 20;
+  return 30;
+}
+
+function comboTimeBonus(comboCount){ return comboCount >= 3 ? 5 : 0; }
+
+function topCandidates(word, k){
+  k = k || 3;
+  var w = resolveWord(word);
+  if(!w) return [];
+  var others = Object.keys(DATA.words).filter(function(x){ return x !== w; });
+  others.sort(function(x,y){ return cosine(DATA.words[w], DATA.words[y]) - cosine(DATA.words[w], DATA.words[x]); });
+  return others.slice(0, k);
+}
+
+/* ---- W4 온라인 채점 어댑터(§B W4·D-5) ----
+   calibrate/fallbackDecision/gameRecordable 셋만 순수 함수로 window.__TXT에 노출한다
+   (T2·T6 게이트 대상). fetchSimScore·pingProxy·sanitizeInput은 fetch를 쓰는 비순수
+   어댑터라 __TXT에는 넣지 않는다 -- fetch 호출은 이 두 함수(어댑터 본체·핑)뿐이다. */
+
+/* [E-1 확정 대기] 원시 코사인 -> 0~100 점수 구간 선형 재매핑 placeholder(§5-3).
+   기준 쌍(높음·중간·낮음) 실측 후 교체 전제 -- 지금은 항등에 가까운 보수적 매핑이다.
+   서버가 이미 calibrate된 score를 주는 게 계약이지만, raw만 오는 경우나 방어적
+   재계산을 위해 클라이언트에도 순수 함수로 둔다. 단조 증가 · 0~100 범위. */
+function calibrate(rawCos){
+  var pts = [[0,0], [0.55,55], [0.7,70], [1,100]];
+  if(rawCos <= pts[0][0]) return pts[0][1];
+  for(var i=1;i<pts.length;i++){
+    if(rawCos <= pts[i][0]){
+      var x0 = pts[i-1][0], y0 = pts[i-1][1], x1 = pts[i][0], y1 = pts[i][1];
+      var t = (rawCos - x0) / (x1 - x0);
+      return jsRound(y0 + t * (y1 - y0));
+    }
+  }
+  return pts[pts.length - 1][1];
+}
+
+/* 온라인 채점 요청 실패·타임아웃의 "연속 2회" 폴백 규칙(T2). failCount는 이번 실패까지
+   포함한 연속 실패 누적 횟수 -- 일반 실패든 타임아웃이든 같은 연속 실패로 센다.
+   timeoutFlag는 이번 실패가 타임아웃이었는지 표시하는 신호값으로 호출부(토스트 문구 등)가
+   쓸 수 있게 받아두되, 폴백 여부 판정 자체는 failCount 하나로 통일한다. */
+function fallbackDecision(failCount, timeoutFlag){
+  return (failCount || 0) >= 2;
+}
+
+/* W4 게이팅 홀 수정(G3/D-8): 판 기록(plays·best·played)은 W4 화면이 마운트된 상태에서
+   60초를 모두 소진했을 때만 남긴다. mounted=false(화면 이탈)면 elapsed 값과 무관하게
+   항상 false -- 이탈 후 어떤 경로로도 played가 참이 되지 않게 하는 최종 방어선(T6). */
+function gameRecordable(mounted, elapsed){
+  return !!mounted && elapsed >= 60;
+}
+
+/* 성공/실패 판정 공통 처리(§B W4 "게임 규칙 구조 유지") -- 콤보·시간보너스·점수 누적·
+   체인 갱신은 채점 소스(온라인 fetch / 오프라인 wordCosine)와 무관하게 동일해야 한다. */
+function applyGameSuccess(live, word, score){
+  var pts = gamePoints(score);
+  live.combo += 1;
+  live.score += pts;
+  var bonus = comboTimeBonus(live.combo);
+  if(bonus) live.timeLeft += bonus;
+  live.used[word] = true;
+  live.chain.push(word);
+  live.current = word;
+  return {type:'success', score:score, points:pts, comboBonus:bonus, combo:live.combo, word:word};
+}
+function applyGameFail(live, word, score){
+  live.combo = 0;
+  return {type:'fail', score:score, word:word};
+}
+
+/* 입력 위생(§B W4 [구현]): 한글 1~6자·공백 제거 정도의 가벼운 필터만. 명사 여부는
+   판정하지 않는다(온라인 채점은 임의 문자열도 벡터화되어 낮은 점수로 자연 처리됨). */
+function sanitizeInput(raw){
+  var s = (raw || '').replace(/\s+/g, '');
+  return /^[가-힣]{1,6}$/.test(s) ? s : '';
+}
+
+/* 온라인 채점 어댑터 본체 -- fetch를 쓰는 유일한 두 지점 중 하나(다른 하나는 pingProxy가
+   재사용하는 이 함수 자체). 엔드포인트 계약(§D 5.1): POST {a, b} -> {score, raw}.
+   score가 오면 그대로, raw만 오면 calibrate()로 매핑한다. 타임아웃 2.5초. */
+function fetchSimScore(a, b, cb){
+  var timedOut = false;
+  var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var timer = setTimeout(function(){
+    timedOut = true;
+    if(ctrl) ctrl.abort();
+  }, 2500);
+  fetch(TXT_SIM_ENDPOINT, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({a: a, b: b}),
+    signal: ctrl ? ctrl.signal : undefined
+  }).then(function(res){
+    clearTimeout(timer);
+    if(!res.ok) throw new Error('http ' + res.status);
+    return res.json();
+  }).then(function(json){
+    var score = (typeof json.score === 'number') ? json.score : calibrate(json.raw);
+    score = Math.max(0, Math.min(100, jsRound(score)));
+    cb(null, {score: score, raw: json.raw});
+  }).catch(function(err){
+    clearTimeout(timer);
+    cb(err, null, timedOut);
+  });
+}
+
+/* 시작 모달 프록시 핑(§B W4·§5-5): {a:'테스트',b:'테스트'} 1회로 온라인/오프라인 모드를
+   가른다. fetchSimScore를 그대로 재사용하므로 fetch 호출 지점은 늘어나지 않는다. */
+function pingProxy(cb){
+  fetchSimScore('테스트', '테스트', function(err){ cb(!err); });
+}
+
+/* ---- 텍스트 처리(9.3): 내용어 추출 · TF · DF · IDF · TF·IDF · 문장 벡터 ----
+   내용어 규칙: NNG는 그대로(또는 lemma가 있으면 lemma) 포함.
+   VV/VA는 lemma가 "~하다/~되다"로 끝나 명사 어근을 뽑을 수 있을 때만 포함
+   (기본형 변환의 결과가 곧 "포함된 명사"). 조사·어미·부사는 내용어 아님. */
+function contentWords(tokens){
+  var out = [];
+  tokens.forEach(function(t){
+    if(t.pos === 'NNG'){
+      out.push(t.lemma || t.surface);
+    } else if(t.pos === 'VV' || t.pos === 'VA'){
+      var lemma = t.lemma || '';
+      if(lemma.slice(-2) === '하다' || lemma.slice(-2) === '되다'){
+        out.push(lemma.slice(0, -2));
+      }
+    }
+  });
+  return out;
+}
+
+function tf(word, docWords){
+  var c = 0;
+  for(var i=0;i<docWords.length;i++){ if(docWords[i] === word) c++; }
+  return c;
+}
+
+function df(word, docsWordLists){
+  var c = 0;
+  docsWordLists.forEach(function(d){ if(d.indexOf(word) >= 0) c++; });
+  return c;
+}
+
+/* IDF = n/DF(비율판, 기본) 또는 log(n/DF)(로그판, 선택). 9.3 */
+function idf(word, docsWordLists, mode){
+  var n = docsWordLists.length;
+  var d = df(word, docsWordLists);
+  if(d === 0) return 0;
+  var ratio = n/d;
+  return mode === 'log' ? Math.log(ratio) : ratio;
+}
+
+function tfidf(word, docWords, docsWordLists, mode){
+  return tf(word, docWords) * idf(word, docsWordLists, mode);
+}
+
+function sentenceVector(docWords, vocab, docsWordLists, mode){
+  return vocab.map(function(w){
+    return mode === 'tfidf' ? tfidf(w, docWords, docsWordLists, 'ratio') : tf(w, docWords);
+  });
+}
+
+function sentenceCosine(vecA, vecB){ return cosine(vecA, vecB); }
+
+/* ---- 형태소 편집(9.3 · 6.2): 합치기 · 기본형 · 분리 ---- */
+function mergeTokens(a, b){
+  return {surface: a.surface + b.surface, pos:'NNG', parts:[a, b]};
+}
+function toBaseForm(t){
+  var out = {};
+  for(var k in t){ out[k] = t[k]; }
+  var lemma = t.lemma || '';
+  if((t.pos === 'VV' || t.pos === 'VA') && (lemma.slice(-2) === '하다' || lemma.slice(-2) === '되다')){
+    out.baseApplied = true;
+    out.nounStem = lemma.slice(0, -2);
+  } else {
+    out.baseApplied = false;
+    out.nounStem = null;
+  }
+  return out;
+}
+function splitToken(t){
+  if(!t.parts || t.parts.length !== 2) return null;
+  return t.parts;
+}
+
+/* ---- S6 어휘(D-6): 학생이 S4에서 confirmed한 두 포커스 문장의 included 토큰 집합의
+   합집합. 각 토큰은 nounStem(기본형→명사 변환 적용됨)이 있으면 그 어근, 없으면
+   lemma||surface를 쓴다. 구 "S5 선택 단어를 벡터 어휘로" 경로를 대체한다(T7②:
+   S5 선택수에 더 이상 의존하지 않음). 순수 함수 -- tokensA/tokensB는 호출부(S6 화면)가
+   STATE.screen('S4').sentences[idx]에서 읽어 넘긴다. ---- */
+function s6TokenWord(t){ return t.baseApplied ? t.nounStem : (t.lemma || t.surface); }
+function s6Vocab(tokensA, tokensB){
+  var seen = {}, out = [];
+  (tokensA || []).concat(tokensB || []).forEach(function(t){
+    if(!t.included) return;
+    var w = s6TokenWord(t);
+    if(!seen[w]){ seen[w] = true; out.push(w); }
+  });
+  return out;
+}
+
+/* ---- S5 §C 중요도 계산기 스테퍼 지원 함수 -- 문장1(focusPair[0])의 고유 내용어를
+   등장 순서대로 뽑는다(하드코딩 없이 매번 실계산, 명세 §C: "실계산 기준 선정"). ---- */
+function tfidfStepperWords(){
+  var focusIdx = DATA.focusPair[0];
+  var docsWordLists = DATA.sentences.map(function(sent){ return contentWords(sent.tokens); });
+  var docWords = docsWordLists[focusIdx];
+  var seen = {}, words = [];
+  docWords.forEach(function(w){ if(!seen[w]){ seen[w] = true; words.push(w); } });
+  return words;
+}
+/* 스테퍼 전체 슬라이드 수 = 단어수 x 3비트(ⓐⓑⓒ) + 마무리 2장(§F-1: 순위표/정리 · 워드클라우드 배지/문장2 비교
+   — pane 스크롤 실측 초과로 분할) */
+function tfidfStepperTotal(){ return tfidfStepperWords().length * 3 + 2; }
+/* 완주 게이팅(§C): 마지막 슬라이드(calcStep === total-1)에 도달해야 완료 */
+function tfidfStepperComplete(calcStep){ return calcStep >= tfidfStepperTotal() - 1; }
+
+/* ---- D-2 축 단어 선정: 두 문장 벡터값(vecA[i], vecB[i])이 가장 크게 갈리는 2개 축을
+   고른다(§D-2: "두 문장 값이 갈리는 쌍을 실계산으로 선정"). 동점이면 vocab 배열 순서로
+   타이브레이크(결정적). vocab이 2개 미만이면 축을 고를 수 없으므로 null. ---- */
+function pickAxisWords(vocab, vecA, vecB){
+  if(!vocab || vocab.length < 2) return null;
+  var scored = vocab.map(function(w, i){ return {word:w, idx:i, diff: Math.abs(vecA[i]-vecB[i])}; });
+  scored.sort(function(a, b){ return b.diff - a.diff || a.idx - b.idx; });
+  return [scored[0], scored[1]];
+}
+
+/* ---- D-1 사전 체험 프리셋(§D-1) -- "같은 방향・다른 길이"는 명세가 지정한 좌표
+   (1,0)/(5,0) 그대로. 나머지 두 프리셋(조금 다른 방향·직각)의 좌표는 이 구현의 설계
+   선택([초안], 선생님 확인 대상) -- 코사인·각도 값은 이 좌표에서 매번 실계산한다(하드코딩 금지). */
+var D1_PRESETS = [
+  {key:'same', label:'같은 방향・다른 길이', A:[1,0], B:[5,0]},
+  {key:'slight', label:'조금 다른 방향', A:[5,0], B:[5,2]},
+  {key:'right', label:'직각', A:[5,0], B:[0,4]}
+];
+
+/* ---- stepDefs(): SCREENS(13장에서 정의) 각 화면의 step 수·isComplete 유무 요약.
+   순수 함수 -- DOM에 접근하지 않고 SCREENS/stepCountOf만 읽는다. 함수 선언은 여기 있지만
+   본문은 호출 시점에만 실행되므로(클로저), SCREENS가 이 위치보다 아래에서 정의돼도
+   무방하다(호출은 전체 스크립트 평가 이후에만 일어난다). ---- */
+function stepDefs(){
+  var out = {};
+  Object.keys(SCREENS).forEach(function(id){
+    var mod = SCREENS[id];
+    var n = stepCountOf(mod);
+    if(n){
+      out[id] = {steps: n, isComplete: mod.steps.map(function(s){ return typeof s.isComplete === 'function'; })};
+    } else {
+      out[id] = {steps: 1, isComplete: [typeof mod.isComplete === 'function']};
+    }
+  });
+  return out;
+}
+
+window.__TXT = {
+  cosine: cosine,
+  wordCosine: wordCosine,
+  jsRound: jsRound,
+  gameScore: gameScore,
+  gamePoints: gamePoints,
+  comboTimeBonus: comboTimeBonus,
+  topCandidates: topCandidates,
+  contentWords: contentWords,
+  tf: tf,
+  df: df,
+  idf: idf,
+  tfidf: tfidf,
+  sentenceVector: sentenceVector,
+  sentenceCosine: sentenceCosine,
+  mergeTokens: mergeTokens,
+  toBaseForm: toBaseForm,
+  splitToken: splitToken,
+  layoutCloud: layoutCloud,
+  s6Vocab: s6Vocab,
+  calibrate: calibrate,
+  fallbackDecision: fallbackDecision,
+  gameRecordable: gameRecordable,
+  stepDefs: stepDefs,
+  tfidfStepperWords: tfidfStepperWords,
+  tfidfStepperTotal: tfidfStepperTotal,
+  tfidfStepperComplete: tfidfStepperComplete,
+  pickAxisWords: pickAxisWords,
+  d1Presets: D1_PRESETS
+};
+
+/* ============================================================
+   12) SCREENS — 화면 정의(빌더) — 원문 문구 상수 (8장)
+   ============================================================ */
+
+function buildW1(){
+  return {
+    steps: [{
+    mount: function(root){
+      var st = STATE.screen('W1');
+      var s = el('section', {class:'screen'});
+      s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션1 · 인공지능은 단어 사이의 관계를 어떻게 알까?'));
+      s.appendChild(el('h2', {class:'screen-title'}, 'W1. 속성 나열'));
+      s.appendChild(el('div', {class:'screen-prompt'}, '강아지, 고양이의 속성을 최대한 나열해 볼까요?'));
+      MASCOT.bubble(s, '생각나는 대로 자유롭게 적어보세요. "다리가 4개다", "귀여움" 무엇이든 좋아요.');
+
+      var cardsRow = el('div', {class:'chips-row'});
+      cardsRow.appendChild(el('span', {class:'chip', style:{cursor:'default', background:'var(--surface-card)'}}, '강아지'));
+      cardsRow.appendChild(el('span', {class:'chip', style:{cursor:'default', background:'var(--surface-card)'}}, '고양이'));
+      s.appendChild(cardsRow);
+
+      var inputRow = el('div', {class:'game-input-row', style:{maxWidth:'420px'}});
+      var input = el('input', {type:'text', 'aria-label':'속성 입력', placeholder:'예: 다리가 4개다'});
+      var addBtn = el('button', {type:'button', class:'btn btn-secondary'}, '추가');
+      inputRow.appendChild(input); inputRow.appendChild(addBtn);
+      s.appendChild(inputRow);
+
+      var chipsHost = el('div', {class:'chips-row'});
+      s.appendChild(chipsHost);
+
+      function renderChips(focusIdx){
+        chipsHost.innerHTML = '';
+        var xBtns = [];
+        st.attrs.forEach(function(a, i){
+          var xBtn = el('button', {type:'button', class:'chip-x', style:{background:'none',border:'none',cursor:'pointer',color:'inherit',font:'inherit'}, 'aria-label':'"' + a + '" 삭제'}, '×');
+          xBtn.addEventListener('click', function(e){
+            e.stopPropagation();
+            st.attrs.splice(i, 1);
+            STATE.save(); renderChips(i); refreshNav();
+          });
+          xBtns.push(xBtn);
+          chipsHost.appendChild(el('span', {class:'chip removable'}, [a, xBtn]));
+        });
+        if(typeof focusIdx === 'number'){
+          if(xBtns.length) xBtns[Math.min(focusIdx, xBtns.length-1)].focus({preventScroll:true});
+          else input.focus({preventScroll:true});
+        }
+      }
+      function addAttr(){
+        var v = input.value.trim();
+        if(!v) return;
+        st.attrs.push(v);
+        input.value = '';
+        STATE.save();
+        renderChips();
+        refreshNav();
+        input.focus();
+      }
+      addBtn.addEventListener('click', addAttr);
+      input.addEventListener('keydown', function(e){
+        if(e.isComposing || e.keyCode === 229) return;
+        if(e.key === 'Enter'){ e.preventDefault(); addAttr(); }
+      });
+      renderChips();
+
+      s.appendChild(Components.SummaryCard({color:'peach', title:'정리', body:'모든 단어에는 그 속성과 의미가 있다.'}));
+      s.appendChild(Components.NextTease('이 속성들을 표로 정리해 볼까요?'));
+      root.appendChild(s);
+    },
+    isComplete: function(){ return STATE.screen('W1').attrs.length >= 3; }
+    }]
+  };
+}
+
+function buildW2(){
+  return {
+    steps: [
+      { /* step1: 질문 */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션1 · 인공지능은 단어 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'W2. 유사성 = 속성 겹침 — 질문'));
+          s.appendChild(el('div', {class:'screen-prompt'}, '두 단어 사이의 유사성은 어떻게 판별할까요?'));
+          s.appendChild(Components.ThoughtBox({screenId:'W2', key:'thought', labelText:'내 생각', placeholder:'예: 겹치는 특징이 많으면 비슷한 것 같다...', onChange:function(){refreshNav();}}));
+          root.appendChild(s);
+        },
+        isComplete: function(){ return (STATE.screen('W2').thought||'').trim().length > 0; }
+      },
+      { /* step2: 관찰 — 합집합 속성만 압축 표시(32속성 전행 나열 대신) */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션1 · 인공지능은 단어 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'W2. 유사성 = 속성 겹침 — 관찰'));
+          s.appendChild(el('h3', {style:{fontSize:'15px'}}, '강아지와 고양이, 속성을 표로 정리해 볼까요?'));
+          var res = SIM.AttrTableCompact(s, '강아지', '고양이');
+          s.appendChild(el('p', {class:'muted'}, '주황빛으로 표시된 줄은 둘 다 가진 공통 속성이에요. 공통 속성: ' + (res.commonAttrs.join(', ') || '없음')));
+          root.appendChild(s);
+        }
+      },
+      { /* step3: 정리 */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션1 · 인공지능은 단어 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'W2. 유사성 = 속성 겹침 — 정리'));
+          s.appendChild(Components.SummaryCard({color:'lavender', title:'정리', body:'단어의 속성 사이에 겹치는 정도로 본다.'}));
+          root.appendChild(s);
+        }
+      }
+    ]
+  };
+}
+
+var W3_PAIRS = [
+  {key:'catdog', a:'고양이', b:'강아지', note:'둘 다 겹치는 속성이 많아요.'},
+  {key:'cartrain', a:'자동차', b:'기차', note:'이번에도 겹치는 속성이 많아요.'},
+  {key:'catcar', a:'고양이', b:'자동차', note:'이번엔 겹치는 속성이 적어요 — 앞의 두 쌍과 대비해서 살펴보세요.'}
+];
+function buildW3(){
+  return {
+    steps: [
+      { /* step1: 함께 점수 — 고양이·강아지 압축 체크표 + "둘 다 가진 속성 수 세기" */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션1 · 인공지능은 단어 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'W3. 코사인 유사도 — 함께 점수'));
+          s.appendChild(el('div', {class:'screen-prompt'}, '얼마나 비슷한지 숫자로 만들어 볼까요? 고양이와 강아지로, 순서대로 계산해 봐요.'));
+          MASCOT.bubble(s, '어려운 말은 몰라도 괜찮아요. 계산 과정만 따라가 봐요.');
+          var res = SIM.AttrTableCompact(s, '고양이', '강아지');
+          var revealHost = el('div', {class:'screen-block'});
+          s.appendChild(revealHost);
+          revealHost.appendChild(el('p', {}, '둘 다 가진(공통) 속성 수를 세면 "함께 점수"가 돼요.'));
+          var out = el('div', {class:'recipe-step recipe-final', 'aria-live':'polite', style:{display:'none'}});
+          var btn = el('button', {type:'button', class:'btn btn-primary'}, '함께 점수 세어보기');
+          btn.addEventListener('click', function(){
+            out.style.display = '';
+            out.innerHTML = '';
+            out.appendChild(el('div', {class:'step-label'}, '함께 점수'));
+            out.appendChild(el('div', {class:'step-value'}, String(res.commonAttrs.length) + '개'));
+            out.appendChild(el('div', {class:'step-detail'}, '공통 속성: ' + res.commonAttrs.join(', ')));
+            FX.pop(out);
+            if(!out.hasAttribute('tabindex')) out.setAttribute('tabindex', '-1');
+            out.focus({preventScroll:true});
+            btn.disabled = true;
+          });
+          revealHost.appendChild(btn);
+          revealHost.appendChild(out);
+          root.appendChild(s);
+        }
+      },
+      { /* step2: 각자 크기 [신설 설명] — "자기가 가진 속성 수의 제곱근". 문구는 [초안] 그대로. */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션1 · 인공지능은 단어 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'W3. 코사인 유사도 — 각자 크기'));
+          s.appendChild(el('div', {class:'screen-prompt'}, '각자 크기 = 자기가 가진 속성 수의 제곱근'));
+          s.appendChild(el('p', {}, [
+            '강아지는 속성 10개 → 크기는 ',
+            el('span', {'data-katex':'\\sqrt{10} \\approx 3.16'}),
+            '. 왜 그냥 10이 아니라 ',
+            el('span', {'data-katex':'\\sqrt{10}'}),
+            '? 속성이 많은 단어가 무조건 유리해지지 않게, 크기를 공평하게 재는 방법이에요. 제곱근 계산은 앱이 해줘요.'
+          ]));
+          root.appendChild(s);
+        }
+      },
+      { /* step3: 0~1 값 — 함께 점수 ÷ (각자 크기 곱) → 코사인 유사도 이름 부여 + E-13 브릿지 */
+        mount: function(root){
+          var st = STATE.screen('W3');
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션1 · 인공지능은 단어 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'W3. 코사인 유사도 — 0~1 값'));
+          var va = SIM.attrsOf('고양이'), vb = SIM.attrsOf('강아지');
+          var together = 0, sizeASq = 0, sizeBSq = 0;
+          for(var i=0;i<va.length;i++){ together += va[i]*vb[i]; sizeASq += va[i]*va[i]; sizeBSq += vb[i]*vb[i]; }
+          var sizeA = Math.sqrt(sizeASq), sizeB = Math.sqrt(sizeBSq);
+          var ratio = (sizeA===0 || sizeB===0) ? 0 : together/(sizeA*sizeB);
+          var fmt2 = function(n){ return (Math.round(n*100)/100).toFixed(2); };
+          var revealHost = el('div', {class:'screen-block'});
+          s.appendChild(revealHost);
+          revealHost.appendChild(el('p', {}, '함께 점수를 각자 크기끼리 곱한 값으로 나누면 0~1 사이 값이 나와요.'));
+          var out = el('div', {class:'recipe-step recipe-final', 'aria-live':'polite', style:{display:'none'}});
+          var btn = el('button', {type:'button', class:'btn btn-primary'}, '나눠 보기');
+          revealHost.appendChild(btn);
+          revealHost.appendChild(out);
+          var meterHost = el('div', {'aria-live':'polite'});
+          s.appendChild(meterHost);
+          var bridgeHost = el('p', {class:'muted', style:{display:'none'}}, '×100 하면 점수로 부를 수 있어요.');
+          s.appendChild(bridgeHost);
+          btn.addEventListener('click', function(){
+            out.style.display = '';
+            out.innerHTML = '';
+            out.appendChild(el('div', {class:'step-label'}, '③ 0~1 값 (코사인 유사도)'));
+            out.appendChild(el('div', {class:'step-value'}, el('span', {'data-katex': together + ' \\div (' + fmt2(sizeA) + ' \\times ' + fmt2(sizeB) + ') \\approx ' + fmt2(ratio)})));
+            out.appendChild(el('div', {class:'step-detail'}, '이 값의 이름이 "코사인 유사도"예요. 1에 가까울수록 비슷하다는 뜻!'));
+            renderMath(out);
+            FX.pop(out);
+            if(!out.hasAttribute('tabindex')) out.setAttribute('tabindex', '-1');
+            out.focus({preventScroll:true});
+            btn.disabled = true;
+            meterHost.innerHTML = '';
+            meterHost.appendChild(Components.SimilarityMeter({value: ratio, label: Math.round(ratio*100) + '점 (코사인 유사도)', angle:true}));
+            bridgeHost.style.display = '';
+            st.seen.catdog = true; STATE.save();
+            refreshNav();
+          });
+          root.appendChild(s);
+        },
+        isComplete: function(){ return !!STATE.screen('W3').seen.catdog; }
+      },
+      { /* step4: 반복·대비 — 자동차·기차(높음) → 고양이·자동차(낮음), 완료 조건(세 쌍 관찰)은 v1 유지 */
+        mount: function(root){
+          var st = STATE.screen('W3');
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션1 · 인공지능은 단어 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'W3. 코사인 유사도 — 반복·대비'));
+          s.appendChild(el('div', {class:'screen-prompt'}, '같은 방법으로 다른 두 쌍도 계산해 볼까요?'));
+
+          var pairs = W3_PAIRS.filter(function(p){ return p.key !== 'catdog'; });
+          var pairHost = el('div', {class:'screen-block'});
+          var bodyHost = el('div', {});
+          s.appendChild(pairHost);
+          s.appendChild(bodyHost);
+
+          var current = pairs[0].key;
+          function renderPairPicker(){
+            pairHost.innerHTML = '';
+            pairHost.appendChild(Components.SegToggle({
+              ariaLabel:'예시 쌍 선택',
+              value: current,
+              options: pairs.map(function(p){ return {value:p.key, label:p.a + '·' + p.b + (st.seen[p.key] ? ' ✓' : '')}; }),
+              onChange: function(v){ current = v; renderBody(); }
+            }));
+          }
+          function renderBody(){
+            bodyHost.innerHTML = '';
+            var pair = pairs.filter(function(p){ return p.key === current; })[0];
+            bodyHost.appendChild(el('p', {}, pair.note));
+            SIM.AttrTable(bodyHost, pair.a, pair.b);
+            var recipeHost = el('div', {class:'screen-block'});
+            var meterHost = el('div', {'aria-live':'polite'});
+            bodyHost.appendChild(recipeHost);
+            bodyHost.appendChild(meterHost);
+            recipeHost.appendChild(Components.CosineRecipe({
+              vecA: SIM.attrsOf(pair.a), vecB: SIM.attrsOf(pair.b),
+              nameA: pair.a, nameB: pair.b, unitLabel:'속성',
+              onDone: function(ratio){
+                st.seen[pair.key] = true; STATE.save();
+                meterHost.innerHTML = '';
+                meterHost.appendChild(Components.SimilarityMeter({value: ratio, label: Math.round(ratio*100) + '점 (코사인 유사도)', angle:true}));
+                if(pair.key === 'catcar') MASCOT.bubble(bodyHost, '숫자가 훨씬 작죠? 겹치는 속성이 적으면 값도 작아져요.', {tone:'cheer'});
+                renderPairPicker();
+                refreshNav();
+              }
+            }));
+          }
+          renderPairPicker();
+          renderBody();
+
+          s.appendChild(Components.SummaryCard({color:'teal', title:'정리', body:'함께 점수를 각자 크기로 나누면 0~1 사이 값이 나온다. 1에 가까울수록 비슷하다는 뜻 — 이 값의 이름이 "코사인 유사도"다.'}));
+          root.appendChild(s);
+        },
+        isComplete: function(){
+          var seen = STATE.screen('W3').seen;
+          return !!seen.catdog && !!seen.cartrain && !!seen.catcar;
+        }
+      },
+      { /* step5: 내가 고른 두 단어 재보기 [A, 신설] — 관찰 선택형(온라인 필수 활동 아님).
+           엔드포인트 계약(POST {a,b} -> {score,raw})은 유사도 점수만 준다(임베딩 벡터 없음) --
+           ①②단은 "AI가 잰 값" 요약으로 축약하고 ③ 미터만 실값(§A 두 번째 분기). */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션1 · 인공지능은 단어 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'W3. 내가 고른 두 단어 재보기'));
+          s.appendChild(el('div', {class:'screen-prompt'}, '예: 고양이 ↔ 호랑이, 학교 ↔ 병원 — 생각보다 비슷할까요? 아무 단어나 둘을 골라 진짜 AI로 재보세요.'));
+
+          var statusHost = el('div', {class:'screen-block'});
+          s.appendChild(statusHost);
+          statusHost.appendChild(el('p', {class:'muted'}, '연결 확인 중…'));
+
+          function renderOffline(){
+            statusHost.innerHTML = '';
+            statusHost.appendChild(el('div', {class:'card-hairline'}, el('p', {style:{margin:'0'}}, '인터넷 연결 시 해볼 수 있어요.')));
+          }
+
+          function renderForm(){
+            statusHost.innerHTML = '';
+            var inputRow = el('div', {class:'game-input-row', style:{flexWrap:'wrap'}});
+            var wrapA = el('div', {style:{display:'flex', flexDirection:'column', gap:'4px', flex:'1', minWidth:'120px'}});
+            wrapA.appendChild(el('label', {class:'thought-label', 'for':'w3s5-word-a'}, '단어 A'));
+            var inputA = el('input', {type:'text', id:'w3s5-word-a', 'aria-label':'단어 A 입력', placeholder:'예: 고양이', autocomplete:'off'});
+            wrapA.appendChild(inputA);
+            var wrapB = el('div', {style:{display:'flex', flexDirection:'column', gap:'4px', flex:'1', minWidth:'120px'}});
+            wrapB.appendChild(el('label', {class:'thought-label', 'for':'w3s5-word-b'}, '단어 B'));
+            var inputB = el('input', {type:'text', id:'w3s5-word-b', 'aria-label':'단어 B 입력', placeholder:'예: 호랑이', autocomplete:'off'});
+            wrapB.appendChild(inputB);
+            inputRow.appendChild(wrapA); inputRow.appendChild(wrapB);
+            statusHost.appendChild(inputRow);
+
+            var goBtn = el('button', {type:'button', class:'btn btn-primary', style:{marginTop:'var(--sp-xs)'}}, '재보기');
+            statusHost.appendChild(goBtn);
+            var resultHost = el('div', {class:'recipe-steps', 'aria-live':'polite'});
+            statusHost.appendChild(resultHost);
+
+            function setBusy(busy){
+              inputA.disabled = busy; inputB.disabled = busy;
+              setDisabled(goBtn, busy);
+            }
+            function doGo(){
+              var a = sanitizeInput(inputA.value), b = sanitizeInput(inputB.value);
+              if(!a || !b){ toast('한글 단어를 1~6자로 입력해 주세요.'); return; }
+              setBusy(true);
+              resultHost.innerHTML = '';
+              var step12 = el('div', {class:'recipe-step'});
+              step12.appendChild(el('div', {class:'step-label'}, '① · ② AI가 잰 값'));
+              var loadingVal = el('div', {class:'step-value fx-pulse'}, 'AI가 벡터로 재는 중…');
+              step12.appendChild(loadingVal);
+              resultHost.appendChild(step12);
+              fetchSimScore(a, b, function(err, result){
+                setBusy(false);
+                loadingVal.classList.remove('fx-pulse');
+                step12.classList.add('shown');
+                if(err){
+                  loadingVal.textContent = '연결이 원활하지 않아요. 다시 시도해 보세요.';
+                  return;
+                }
+                loadingVal.textContent = '확인 완료';
+                step12.appendChild(el('div', {class:'step-detail'},
+                  'AI는 "' + a + '"' + JOSA.waGwa(a) + ' "' + b + '"' + JOSA.eulReul(b) + ' 수백 개의 숫자로 된 벡터로 재요. "함께 나온 정도"와 "각자 크기"를 계산해서 하나의 값을 냈어요.'));
+                FX.pop(step12);
+                setTimeout(function(){
+                  var step3 = el('div', {class:'recipe-step recipe-final shown'});
+                  step3.appendChild(el('div', {class:'step-label'}, '③ 0~1 값 (코사인 유사도)'));
+                  step3.appendChild(Components.SimilarityMeter({value: result.score/100, label: result.score + '점 (코사인 유사도)', angle:true}));
+                  resultHost.appendChild(step3);
+                  FX.pop(step3);
+                }, FX.reducedMotion ? 0 : 320);
+              });
+            }
+            goBtn.addEventListener('click', doGo);
+            function enterGuard(e){
+              if(e.isComposing || e.keyCode === 229) return;
+              if(e.key === 'Enter'){ e.preventDefault(); doGo(); }
+            }
+            inputA.addEventListener('keydown', enterGuard);
+            inputB.addEventListener('keydown', enterGuard);
+          }
+
+          pingProxy(function(ok){ if(ok) renderForm(); else renderOffline(); });
+          root.appendChild(s);
+        },
+        isComplete: function(){ return true; }
+      }
+    ]
+  };
+}
+
+function buildW4(){
+  return {
+    steps: [{
+    mount: function(root){
+      var s = el('section', {class:'screen'});
+      s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션1 · 인공지능은 단어 사이의 관계를 어떻게 알까?'));
+      s.appendChild(el('h2', {class:'screen-title'}, 'W4. 코사인 이어말하기 게임'));
+      GAME.mount(s);
+      root.appendChild(s);
+    },
+    isComplete: function(){ return !!STATE.screen('W4').played; }
+    }],
+    /* G3/D-8 게이팅 홀 수정: W4를 떠날 때(다음/이전 화면 이동 모두) 진행 중인 판을
+       무효화한다. ROUTER.go()/next()/prev()가 화면을 옮기기 전에 항상 호출한다. */
+    onStepExit: function(){ GAME.onScreenExit(); }
+  };
+}
+
+function buildS1(){
+  return {
+    steps: [{
+    mount: function(root){
+      var s = el('section', {class:'screen'});
+      s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+      s.appendChild(el('h2', {class:'screen-title'}, 'S1. 두 문장, 어떻게 비슷하다고 알까?'));
+      s.appendChild(el('div', {class:'screen-prompt'}, '제시된 두 문장이 비슷하다는 걸 인공지능은 어떻게 알까요?'));
+      var a = DATA.sentences[DATA.focusPair[0]], b = DATA.sentences[DATA.focusPair[1]];
+      var cardRow = el('div', {class:'screen-block'});
+      cardRow.appendChild(el('div', {class:'card-hairline', style:{marginBottom:'8px'}}, '"' + a.text + '"'));
+      cardRow.appendChild(el('div', {class:'card-hairline'}, '"' + b.text + '"'));
+      s.appendChild(cardRow);
+      MASCOT.bubble(s, '두 문장을 읽어보니 비슷한가요? 왜 그렇게 느꼈는지 적어보세요.');
+      s.appendChild(Components.ThoughtBox({screenId:'S1', key:'thought', labelText:'내 생각', placeholder:'예: 같은 단어가 많이 나와서...', onChange:function(){refreshNav();}}));
+      root.appendChild(s);
+    },
+    isComplete: function(){ return (STATE.screen('S1').thought||'').trim().length > 0; }
+    }]
+  };
+}
+
+function buildS2(){
+  return {
+    steps: [
+      { /* step1: 질문 — 대응 하이라이트 + 생각칸(힌트 순화) */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S2. 문장은 무엇을 비교하나 — 질문'));
+          s.appendChild(el('div', {class:'screen-prompt'}, '단어는 속성을 비교했어요. 문장은 무엇을 비교해야 할까요?'));
+          s.appendChild(Components.Highlight([{label:'단어 → 속성'}, {label:'문장 → ?'}]));
+          s.appendChild(Components.ThoughtBox({screenId:'S2', key:'thought', labelText:'내 생각', placeholder:'예: 단어에서 썼던 방법을 떠올려 보세요', onChange:function(){refreshNav();}}));
+          root.appendChild(s);
+        },
+        isComplete: function(){ return (STATE.screen('S2').thought||'').trim().length > 0; }
+      },
+      { /* step2: 정리 — 생각칸 제출 후에만 등장 */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S2. 문장은 무엇을 비교하나 — 정리'));
+          s.appendChild(Components.SummaryCard({color:'ochre', title:'정리', body:'문장 속 단어들로 비교한다.'}));
+          root.appendChild(s);
+        }
+      }
+    ]
+  };
+}
+
+function buildS3(){
+  return {
+    steps: [
+      { /* step1: 질문 — 예시 문장 + 생각칸(힌트 순화) */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S3. 다 비교해야 할까? — 질문'));
+          s.appendChild(el('div', {class:'screen-prompt'}, '문장 속 단어를 분석해 봐요! 그런데, 전부 다 비교해야 할까요?'));
+          var a = DATA.sentences[DATA.focusPair[0]];
+          s.appendChild(el('p', {}, '"' + a.text + '"'));
+          s.appendChild(Components.ThoughtBox({screenId:'S3', key:'thought', labelText:'내 생각', placeholder:'예: 문장 속 조각들을 하나씩 살펴보세요', onChange:function(){refreshNav();}}));
+          root.appendChild(s);
+        },
+        isComplete: function(){ return (STATE.screen('S3').thought||'').trim().length > 0; }
+      },
+      { /* step2: 관찰 — 조사·어미 조각 칩(괄호 코드 삭제·표면형 중복 제거) */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S3. 다 비교해야 할까? — 관찰'));
+          var a = DATA.sentences[DATA.focusPair[0]];
+          s.appendChild(el('p', {}, '"' + a.text + '"'));
+          var chips = el('div', {class:'chips-row'});
+          var seenSurface = {};
+          a.tokens.forEach(function(t){
+            var group = MORPH.posGroup(t.pos);
+            if(group !== 'particle' && group !== 'ending') return;
+            if(seenSurface[t.surface]) return;
+            seenSurface[t.surface] = true;
+            chips.appendChild(el('span', {class:'chip', style:{cursor:'default'}}, [
+              t.surface + ' ',
+              el('span', {class:'postag pos-' + group}, MORPH.POS_LABEL[group])
+            ]));
+          });
+          s.appendChild(chips);
+          s.appendChild(el('p', {class:'muted'}, '위에 골라낸 조각들 — "은","를","으로" 같은 건 뜻보다는 문법을 나타내요. 뜻을 비교할 땐 필요 없어 보이지 않나요?'));
+          root.appendChild(s);
+        }
+      },
+      { /* step3: 정리 — 교과서 용어 카드 + SummaryCard */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S3. 다 비교해야 할까? — 정리'));
+          var termsHost = el('div', {class:'card card-ochre'});
+          termsHost.appendChild(el('div', {class:'card-title'}, '교과서 용어'));
+          var termGrid = el('div', {class:'chips-row'});
+          [
+            ['토큰화', '문장을 의미를 가진 조각(형태소·단어)으로 나누는 것'],
+            ['불용어', '조사·어미처럼 뜻보다 문법 역할을 하는, 비교에서 빼는 말'],
+            ['형태소', '뜻을 가진 가장 작은 말의 단위']
+          ].forEach(function(t){
+            var box = el('div', {class:'card-hairline', style:{minWidth:'160px', background:'var(--canvas)'}});
+            box.appendChild(el('div', {style:{fontWeight:'700', marginBottom:'4px'}}, t[0]));
+            box.appendChild(el('div', {class:'muted'}, t[1]));
+            termGrid.appendChild(box);
+          });
+          termsHost.appendChild(termGrid);
+          s.appendChild(termsHost);
+          s.appendChild(Components.SummaryCard({color:'pink', title:'정리', body:'필요 없는 것은 제외해야 한다.'}));
+          root.appendChild(s);
+        }
+      }
+    ]
+  };
+}
+
+function buildS4(){
+  return {
+    steps: [
+      { /* step1: 문장1 — 확정해야 다음 step(문장2)이 열린다 */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S4. 문장 분해 — 문장1'));
+          s.appendChild(el('div', {class:'screen-prompt'}, '문장을 분해해 볼까요? 뜻을 담은 단어(주로 명사)만 남겨보세요.'));
+          MORPH.render(s, DATA.focusPair[0]);
+          root.appendChild(s);
+        },
+        isComplete: function(){ return !!STATE.screen('S4').confirmed[DATA.focusPair[0]]; }
+      },
+      { /* step2: 문장2 — 문장1 확정 후에만 도달(같은 확정 흐름) */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S4. 문장 분해 — 문장2'));
+          MORPH.render(s, DATA.focusPair[1]);
+          root.appendChild(s);
+        },
+        isComplete: function(){ return !!STATE.screen('S4').confirmed[DATA.focusPair[1]]; }
+      }
+    ]
+  };
+}
+
+/* ---- S5 §B/§C 공용: 8문장 미니 카드 뷰에서 targetWord를 포함한 문장을 하나씩 순차
+   하이라이트(스윕)한다. B의 3a와 C의 ⓑ비트가 재사용한다(§C: "B의 3a 연출 재사용").
+   컨테이너에 카드 그리드를 붙이고, 나온 문장 수(df)를 반환한다. ---- */
+function renderSentenceSweep(container, targetWord, docsWordLists){
+  var n = docsWordLists.length;
+  var containing = DATA.sentences.map(function(sent, i){ return docsWordLists[i].indexOf(targetWord) >= 0; });
+  var dfCount = containing.filter(function(v){ return v; }).length;
+  var counterHost = el('div', {style:{fontSize:'20px', fontWeight:'800', textAlign:'center', margin:'6px 0'}}, '0 / ' + n);
+  container.appendChild(counterHost);
+  var grid = el('div', {class:'corpus-grid'});
+  var cardEls = [];
+  DATA.sentences.forEach(function(sent){
+    var card = el('div', {class:'corpus-card'}, '"' + sent.text + '"');
+    cardEls.push(card);
+    grid.appendChild(card);
+  });
+  container.appendChild(grid);
+  var matched = [];
+  containing.forEach(function(has, i){ if(has) matched.push(i); });
+  var count = 0;
+  matched.forEach(function(idx, order){
+    var delay = FX.reducedMotion ? 0 : order*220;
+    setTimeout(function(){
+      if(!cardEls[idx].isConnected) return; /* 다른 슬라이드로 이동해 DOM이 제거됐으면 무시 */
+      cardEls[idx].classList.add('focus');
+      FX.pop(cardEls[idx]);
+      count++;
+      counterHost.textContent = count + ' / ' + n;
+    }, delay);
+  });
+  return dfCount;
+}
+
+function buildS5(){
+  return {
+    steps: [
+      { /* step0: 말뭉치 소개 [신설·독립 검토 G2] — 학생이 본 건 2문장뿐인데 아래 단계는
+           8문장 전체를 쓰므로, 먼저 전체를 짧게 훑는다. */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S5. 말뭉치 소개'));
+          s.appendChild(el('div', {class:'screen-prompt'}, '문장 2개만으론 "흔한 단어"를 알 수 없어요. 문장 8개를 모아 봤어요(우리가 본 두 문장 포함).'));
+          var grid = el('div', {class:'corpus-grid'});
+          DATA.sentences.forEach(function(sent, i){
+            var isFocus = DATA.focusPair.indexOf(i) >= 0;
+            grid.appendChild(el('div', {class:'corpus-card' + (isFocus ? ' focus' : '')}, '"' + sent.text + '"' + (isFocus ? ' ✓' : '')));
+          });
+          s.appendChild(grid);
+          root.appendChild(s);
+        }
+      },
+      { /* step1: 워드클라우드 — D-7 겹침 결함 수정(실측 폭·중앙 fallback 제거) */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S5. 워드클라우드'));
+          s.appendChild(el('div', {class:'screen-prompt'}, '자주 나온 단어일수록 크게 보여요. 어떤 단어가 눈에 띄나요?'));
+          CLOUD.renderCloud(s);
+          root.appendChild(s);
+        }
+      },
+      { /* step2: 빈도표 — 등장 이유 설명 + 상위 8~12개 선택(현행 로직 유지) */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S5. 빈도표'));
+          s.appendChild(el('div', {class:'screen-prompt'}, '구름은 한눈에 보기엔 좋지만, 문장들을 비교하려면 정확한 숫자가 필요해요. 어떤 단어가 몇 번, 몇 문장에 나왔는지 세어 볼까요?'));
+          CLOUD.renderFreqTable(s);
+          root.appendChild(s);
+        },
+        isComplete: function(){
+          var st = STATE.screen('S5');
+          var n = Object.keys(st.selected).filter(function(k){ return st.selected[k]; }).length;
+          return n >= 8 && n <= 12;
+        }
+      },
+      { /* step3a: 흔한 단어의 함정 — 생각 유도 [B] — 기존 ① 원문 + 8문장 스윕 시각 연출 */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S5. 흔한 단어의 함정 — 생각 유도'));
+          var docsWordLists = DATA.sentences.map(function(sent){ return contentWords(sent.tokens); });
+          var dfAI = df('인공지능', docsWordLists);
+          s.appendChild(el('div', {class:'screen-prompt', style:{fontSize:'17px'}},
+            '"인공지능"은 8문장 중 ' + dfAI + '문장에 나와요. 이 단어가 문장1의 특징일까요?'));
+          var sweepHost = el('div', {class:'screen-block'});
+          s.appendChild(sweepHost);
+          renderSentenceSweep(sweepHost, '인공지능', docsWordLists);
+          root.appendChild(s);
+        }
+      },
+      { /* step3b: 흔한 단어의 함정 — 나온 문장 수 [B] — 기존 ② 원문 + 실계산 막대 대비 */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S5. 흔한 단어의 함정 — 나온 문장 수'));
+          var docsWordLists = DATA.sentences.map(function(sent){ return contentWords(sent.tokens); });
+          var n = docsWordLists.length;
+          var dfAI = df('인공지능', docsWordLists), dfGiban = df('기반', docsWordLists);
+          s.appendChild(el('div', {class:'screen-prompt', style:{fontSize:'17px'}},
+            '모든 문장에 다 나오는 단어는 어느 문장의 특징도 아니에요. 그래서 몇 문장에 나왔는지를 세요.'));
+          var barHost = el('div', {class:'screen-block'});
+          s.appendChild(barHost);
+          [['인공지능', dfAI], ['기반', dfGiban]].forEach(function(pair){
+            var row = el('div', {class:'compare-bar-row'});
+            row.appendChild(el('div', {class:'compare-bar-label'}, pair[0]));
+            var track = el('div', {class:'compare-bar-track'});
+            var fill = el('div', {class:'compare-bar-fill'});
+            track.appendChild(fill);
+            row.appendChild(track);
+            row.appendChild(el('div', {class:'compare-bar-value'}, pair[1] + '/' + n));
+            barHost.appendChild(row);
+            requestAnimationFrame(function(){ fill.style.width = Math.max(0, Math.min(100, pair[1]/n*100)) + '%'; });
+          });
+          root.appendChild(s);
+        }
+      },
+      { /* step3c: 흔한 단어의 함정 — 희소 점수 [B] — 기존 ③+⑤ 원문 + 나눗셈 순차 연출·막대 역전 */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S5. 흔한 단어의 함정 — 희소 점수'));
+          var docsWordLists = DATA.sentences.map(function(sent){ return contentWords(sent.tokens); });
+          var n = docsWordLists.length;
+          var dfAI = df('인공지능', docsWordLists), dfGiban = df('기반', docsWordLists);
+          var idfAI = idf('인공지능', docsWordLists, 'ratio'), idfGiban = idf('기반', docsWordLists, 'ratio');
+          var fmt2 = function(v){ return (Math.round(v*100)/100).toFixed(2); };
+          s.appendChild(el('div', {class:'screen-prompt', style:{fontSize:'17px'}},
+            '드문 단어일수록 점수를 크게 주고 싶으면? 전체 문장 수 ÷ 그 단어가 나온 문장 수로 나누면 돼요 — 흔하면 작아지고, 드물면 커져요.'));
+
+          var stepsHost = el('div', {style:{display:'flex', flexWrap:'wrap', gap:'10px', margin:'var(--sp-sm) 0'}});
+          var stepAI = el('div', {class:'recipe-step', style:{flex:'1', minWidth:'150px'}}, [
+            el('div', {class:'step-label'}, '"인공지능"(' + dfAI + '문장 등장)'),
+            el('div', {class:'step-value'}, '?')
+          ]);
+          var stepGiban = el('div', {class:'recipe-step', style:{flex:'1', minWidth:'150px'}}, [
+            el('div', {class:'step-label'}, '"기반"(' + dfGiban + '문장 등장)'),
+            el('div', {class:'step-value'}, '?')
+          ]);
+          stepsHost.appendChild(stepAI); stepsHost.appendChild(stepGiban);
+          s.appendChild(stepsHost);
+
+          var barHost = el('div', {class:'screen-block'});
+          s.appendChild(barHost);
+          var fillAI, fillGiban, valueAI, valueGiban;
+          [['인공지능', dfAI], ['기반', dfGiban]].forEach(function(pair, i){
+            var row = el('div', {class:'compare-bar-row'});
+            row.appendChild(el('div', {class:'compare-bar-label'}, pair[0]));
+            var track = el('div', {class:'compare-bar-track'});
+            var fill = el('div', {class:'compare-bar-fill', style:{width: Math.round(pair[1]/n*100) + '%'}});
+            track.appendChild(fill);
+            row.appendChild(track);
+            var value = el('div', {class:'compare-bar-value'}, pair[1] + '/' + n);
+            row.appendChild(value);
+            barHost.appendChild(row);
+            if(i===0){ fillAI = fill; valueAI = value; } else { fillGiban = fill; valueGiban = value; }
+          });
+          s.appendChild(el('p', {class:'muted'}, '방금 본 "나온 문장 수" 막대예요. 나눗셈을 하면 희소 점수로 바뀌어요 — 막대가 어떻게 바뀌는지 보세요.'));
+
+          function reveal(stepEl, katexStr, delay){
+            setTimeout(function(){
+              stepEl.classList.add('shown');
+              var valueEl = stepEl.querySelector('.step-value');
+              valueEl.innerHTML = '';
+              valueEl.appendChild(el('span', {'data-katex': katexStr}));
+              renderMath(stepEl);
+              FX.pop(stepEl);
+            }, FX.reducedMotion ? 0 : delay);
+          }
+          reveal(stepAI, n + ' \\div ' + dfAI + ' \\approx ' + fmt2(idfAI), 0);
+          reveal(stepGiban, n + ' \\div ' + dfGiban + ' = ' + fmt2(idfGiban), 260);
+          var idfMax = Math.max(idfAI, idfGiban);
+          setTimeout(function(){
+            valueAI.textContent = fmt2(idfAI);
+            valueGiban.textContent = fmt2(idfGiban);
+            fillAI.style.width = Math.max(0, Math.min(100, idfAI/idfMax*100)) + '%';
+            fillGiban.style.width = Math.max(0, Math.min(100, idfGiban/idfMax*100)) + '%';
+          }, FX.reducedMotion ? 0 : 620);
+
+          s.appendChild(el('p', {class:'muted', style:{marginTop:'var(--sp-sm)'}},
+            '②·③처럼 "몇 문장에 나왔는지"로 구한 값의 이름이 "희소 점수"예요. 다음 화면 계산기에서 이 이름을 다시 만나요.'));
+          root.appendChild(s);
+        }
+      },
+      { /* step3d: 흔한 단어의 함정 — 중요도 점수 [B] — 기존 ④ 원문 + 조립 연출·결과 막대 */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S5. 흔한 단어의 함정 — 중요도 점수'));
+          var docsWordLists = DATA.sentences.map(function(sent){ return contentWords(sent.tokens); });
+          var focusIdx = DATA.focusPair[0];
+          var docWords = docsWordLists[focusIdx];
+          var fmt2 = function(v){ return (Math.round(v*100)/100).toFixed(2); };
+          s.appendChild(el('div', {class:'screen-prompt', style:{fontSize:'17px'}},
+            '여기에 그 문장 안에서 나온 횟수를 곱하면, 그 문장만의 중요도 점수가 돼요.'));
+
+          var pairsHost = el('div', {style:{display:'flex', flexWrap:'wrap', gap:'12px', margin:'var(--sp-sm) 0'}});
+          s.appendChild(pairsHost);
+          var barHost = el('div', {class:'screen-block'});
+          var words = ['인공지능', '기반'];
+          var vals = words.map(function(w){ return tf(w, docWords) * idf(w, docsWordLists, 'ratio'); });
+          var maxVal = Math.max(vals[0], vals[1]);
+          words.forEach(function(w, wi){
+            var tfVal = tf(w, docWords), idfVal = idf(w, docsWordLists, 'ratio'), tfidfVal = vals[wi];
+            var box = el('div', {class:'recipe-step', style:{flex:'1', minWidth:'150px'}}, [
+              el('div', {class:'step-label'}, '"' + w + '"' + JOSA.eunNeun(w) + ' 문장1에서'),
+              el('div', {class:'step-value'}, '?')
+            ]);
+            pairsHost.appendChild(box);
+            setTimeout(function(){
+              box.classList.add('shown');
+              var valueEl = box.querySelector('.step-value');
+              valueEl.innerHTML = '';
+              valueEl.appendChild(el('span', {'data-katex': tfVal + ' \\times ' + fmt2(idfVal) + ' \\approx ' + fmt2(tfidfVal)}));
+              renderMath(box);
+              FX.pop(box);
+              var row = el('div', {class:'compare-bar-row'});
+              row.appendChild(el('div', {class:'compare-bar-label'}, w));
+              var track = el('div', {class:'compare-bar-track'});
+              var fill = el('div', {class:'compare-bar-fill'});
+              track.appendChild(fill);
+              row.appendChild(track);
+              row.appendChild(el('div', {class:'compare-bar-value'}, fmt2(tfidfVal)));
+              barHost.appendChild(row);
+              requestAnimationFrame(function(){ fill.style.width = Math.max(0, Math.min(100, tfidfVal/maxVal*100)) + '%'; });
+            }, FX.reducedMotion ? 0 : wi*280);
+          });
+          s.appendChild(barHost);
+          root.appendChild(s);
+        }
+      },
+      { /* step4: 중요도 점수 계산기 — 현행 계산기 재사용, 표 헤더만 풀어쓰기(§5-1) */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S5. 중요도 점수 계산기'));
+          var tfidfHost = el('div', {class:'screen-block'});
+          s.appendChild(tfidfHost);
+          TFIDF.render(tfidfHost, STATE.screen('S5'));
+          root.appendChild(s);
+        },
+        isComplete: function(){ return TFIDF.isComplete(); }
+      }
+    ]
+  };
+}
+
+function buildS5C(){
+  return {
+    steps: [
+      { /* step1: 핵심어 = 요약 — 문장1의 중요도 점수 상위 단어 하이라이트 */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S5C. 핵심어 = 요약'));
+          s.appendChild(el('div', {class:'screen-prompt'}, '중요도 점수가 큰 단어들을 뽑으면 그 문장의 핵심어가 돼요. 문장1의 점수 상위 단어를 확인해 보세요 — 이게 컴퓨터가 하는 "요약"이에요.'));
+
+          var focusIdx = DATA.focusPair[0];
+          var docsWordLists = DATA.sentences.map(function(sent){ return contentWords(sent.tokens); });
+          var docWords = docsWordLists[focusIdx];
+          var seenW = {}, uniqueWords = [];
+          docWords.forEach(function(w){ if(!seenW[w]){ seenW[w]=true; uniqueWords.push(w); } });
+          var scored = uniqueWords.map(function(w){ return {word:w, score: tfidf(w, docWords, docsWordLists, 'ratio')}; });
+          scored.sort(function(a,b){ return b.score - a.score || a.word.localeCompare(b.word); });
+          var top = scored.slice(0, 4);
+
+          s.appendChild(el('p', {}, '"' + DATA.sentences[focusIdx].text + '"'));
+          var chipsRow = el('div', {class:'highlight-row'});
+          top.forEach(function(item){ chipsRow.appendChild(el('span', {class:'highlight-chip'}, item.word)); });
+          s.appendChild(chipsRow);
+          root.appendChild(s);
+        }
+      },
+      { /* step2: 세상에서의 활용 [F2] — 검색·표절탐지·뉴스묶음 카드 3장 */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S5C. 이 점수, 세상에서는 어떻게 쓰일까?'));
+          var grid = el('div', {class:'chips-row'});
+          [
+            ['검색', '질문과 중요도가 비슷한 문서를 위로 올려요.'],
+            ['표절·유사 문서 탐지', '점수 목록이 비슷하면 베꼈는지 의심해요.'],
+            ['뉴스 묶음·추천', '비슷한 기사끼리 묶어서 보여줘요.']
+          ].forEach(function(item){
+            var card = el('div', {class:'card-hairline', style:{minWidth:'160px'}});
+            card.appendChild(el('div', {style:{fontWeight:'700', marginBottom:'4px'}}, item[0]));
+            card.appendChild(el('div', {class:'muted'}, item[1]));
+            grid.appendChild(card);
+          });
+          s.appendChild(grid);
+          root.appendChild(s);
+        }
+      },
+      { /* step3: 다음 예고 + [E-5] TF·IDF 이름 1회 공개(기본값: 공개) */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S5C. 다음 예고'));
+          s.appendChild(el('div', {class:'screen-prompt'}, '그럼 두 문장이 "얼마나 비슷한지"도 이 숫자 목록으로 잴 수 있을까요? — 섹션1에서 배운 그 방법으로.'));
+          s.appendChild(el('p', {class:'muted', style:{fontSize:'13px'}}, '이 점수의 정식 이름은 TF·IDF예요.'));
+          root.appendChild(s);
+        }
+      }
+    ]
+  };
+}
+
+/* ---- S6가 읽는 S4 접근자(하드 제약: S4 기존 로직은 무변경, 읽기 전용 접근자만 추가) ---- */
+function s4TokensFor(idx){
+  var st4 = STATE.screen('S4');
+  return (st4.sentences && st4.sentences[idx]) ? st4.sentences[idx] : [];
+}
+function s4FocusConfirmed(){
+  var st4 = STATE.screen('S4');
+  return !!st4.confirmed[DATA.focusPair[0]] && !!st4.confirmed[DATA.focusPair[1]];
+}
+/* T7③: 영벡터(전부 제외)·완전 동일(구별어 전부 제외 시 1.0) 입력에 대한 안내 문구 */
+function s6ExtremeNote(ratio){
+  if(ratio <= 0) return '두 문장에 남긴 핵심어가 하나도 겹치지 않아요 — 완전히 다른 문장처럼 계산돼요. S4로 돌아가 무엇을 남겼는지 다시 살펴볼까요?';
+  if(ratio >= 0.999) return '두 문장의 핵심어 목록이 (거의) 똑같아요 — 정말 완전히 같은 문장일까요? 어떤 핵심어를 남겼는지 다시 살펴보세요.';
+  return null;
+}
+
+function buildS6(){
+  return {
+    steps: [
+      { /* step1: 벡터 만들기 — D-6: 어휘 = S4 confirmed 두 문장의 included 합집합 */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S6. 벡터 만들기'));
+          if(!s4FocusConfirmed()){
+            s.appendChild(el('p', {class:'muted'}, '먼저 S4에서 두 문장을 확정하세요.'));
+            root.appendChild(s);
+            return;
+          }
+          var a = DATA.sentences[DATA.focusPair[0]], b = DATA.sentences[DATA.focusPair[1]];
+          var vocab = s6Vocab(s4TokensFor(DATA.focusPair[0]), s4TokensFor(DATA.focusPair[1]));
+          s.appendChild(el('div', {class:'screen-prompt'}, 'S4에서 남긴 핵심어들이 벡터의 칸이 돼요.'));
+          var cardRow = el('div', {class:'screen-block'});
+          cardRow.appendChild(el('div', {class:'card-hairline', style:{marginBottom:'8px'}}, '"' + a.text + '"'));
+          cardRow.appendChild(el('div', {class:'card-hairline'}, '"' + b.text + '"'));
+          s.appendChild(cardRow);
+          s.appendChild(el('p', {class:'muted'}, '벡터의 칸(핵심어):'));
+          var vocabHost = el('div', {class:'chips-row'});
+          vocab.forEach(function(w){ vocabHost.appendChild(el('span', {class:'chip', style:{cursor:'default'}}, w)); });
+          s.appendChild(vocabHost);
+          root.appendChild(s);
+        },
+        isComplete: function(){ return s4FocusConfirmed(); }
+      },
+      { /* D-1: 같은 방향, 다른 길이 [신설, 사전 체험] — 각본형 프리셋 3개(자유 드래그 없음,
+           P6 안내 시연 원칙). 관찰 선택형이라 게이팅 없음(isComplete 미지정 = 항상 통과). */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S6. 같은 방향, 다른 길이 (사전 체험)'));
+          s.appendChild(el('div', {class:'screen-prompt'}, '버튼을 눌러 화살표 두 개를 움직여 보세요. 방향과 길이 중 무엇이 유사도를 바꿀까요?'));
+
+          var sceneHost = el('div', {class:'screen-block'});
+          s.appendChild(sceneHost);
+          var valueHost = el('p', {style:{textAlign:'center', fontWeight:'800', fontSize:'18px'}, 'aria-live':'polite'});
+          s.appendChild(valueHost);
+          var btnRow = el('div', {class:'btn-row'});
+          s.appendChild(btnRow);
+
+          function fmt3(n){ return (Math.round(n*1000)/1000).toString(); }
+          function draw(A, B){
+            sceneHost.innerHTML = '';
+            var c = cosine(A, B);
+            sceneHost.appendChild(Components.VectorAngleDiagram({
+              Ax:A[0], Ay:A[1], Bx:B[0], By:B[1], labelA:'화살표1', labelB:'화살표2',
+              showValueText: fmt3(c), ariaLabel:'화살표1과 화살표2, 코사인 값 ' + fmt3(c)
+            }));
+            valueHost.textContent = '코사인 값: ' + fmt3(c);
+          }
+
+          var current = D1_PRESETS[0];
+          var lastA = current.A.slice(), lastB = current.B.slice();
+          /* 애니 경합 락(세션17 선례 패턴): 프리셋 클릭마다 토큰을 올리고, 그 tween의
+             onUpdate/onDone은 자기 토큰이 "최신"일 때만 그린다. 이전 tween을 막지 않고
+             그대로 진행시키되(반응성 유지) 화면에는 항상 가장 최근 클릭만 반영되게 한다 --
+             연타 시 먼저 시작한 tween의 늦게 도착한 프레임이 나중 클릭 결과를 덮어쓰는 경합을 막는다. */
+          var clickToken = 0, buttons = [];
+          function selectPreset(p){
+            var myToken = ++clickToken;
+            buttons.forEach(function(b){ b.classList.toggle('active', b.dataset.key === p.key); });
+            var fromA = lastA, fromB = lastB;
+            FX.tween({
+              duration: 380,
+              onUpdate: function(t){
+                if(myToken !== clickToken) return; /* 더 최근 클릭이 있으면 이 프레임은 버린다 */
+                draw([fromA[0]+(p.A[0]-fromA[0])*t, fromA[1]+(p.A[1]-fromA[1])*t],
+                     [fromB[0]+(p.B[0]-fromB[0])*t, fromB[1]+(p.B[1]-fromB[1])*t]);
+              },
+              onDone: function(){
+                if(myToken !== clickToken) return;
+                lastA = p.A.slice(); lastB = p.B.slice(); draw(p.A, p.B);
+              }
+            });
+          }
+          D1_PRESETS.forEach(function(p){
+            var b = el('button', {type:'button', class:'btn btn-secondary'+(p.key===current.key?' active':'')}, p.label);
+            b.dataset.key = p.key;
+            b.addEventListener('click', function(){ selectPreset(p); });
+            buttons.push(b);
+            btnRow.appendChild(b);
+          });
+          draw(current.A, current.B);
+
+          s.appendChild(el('p', {class:'muted', style:{marginTop:'var(--sp-sm)'}},
+            '길이(몇 번 나왔는지 총량)가 달라도 방향이 같으면 유사도는 그대로 — 코사인은 방향만 봐요.'));
+          root.appendChild(s);
+        }
+      },
+      { /* D-2: 2칸만 뽑아 본 그림 [신설, §F-3 분리 — 이전엔 코사인 계산 화면에 함께 있었으나
+           pane 스크롤 실측 초과로 별도 슬라이드로 뺐다]. 정직 프레이밍 라벨 필수, 각도 호 옆
+           값 표기는 생략(실제 고차원 코사인과 다를 수 있음을 오해하지 않도록). 관찰형이라
+           게이팅 없음(isComplete 미지정 = 항상 통과). */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S6. 2칸만 뽑아 본 그림'));
+          if(!s4FocusConfirmed()){
+            s.appendChild(el('p', {class:'muted'}, '먼저 S4에서 두 문장을 확정하세요.'));
+            root.appendChild(s);
+            return;
+          }
+          var tokA = s4TokensFor(DATA.focusPair[0]), tokB = s4TokensFor(DATA.focusPair[1]);
+          var vocab = s6Vocab(tokA, tokB);
+          var docsWordLists = DATA.sentences.map(function(sent){ return contentWords(sent.tokens); });
+          var vecA = sentenceVector(docsWordLists[DATA.focusPair[0]], vocab, docsWordLists, 'tf');
+          var vecB = sentenceVector(docsWordLists[DATA.focusPair[1]], vocab, docsWordLists, 'tf');
+          var axisPick = pickAxisWords(vocab, vecA, vecB);
+          if(axisPick){
+            var ax1 = axisPick[0].idx, ax2 = axisPick[1].idx;
+            var axisWordA = axisPick[0].word, axisWordB = axisPick[1].word;
+            s.appendChild(el('div', {class:'screen-prompt'},
+              '전체 ' + vocab.length + '칸 중 2칸("' + axisWordA + '"·"' + axisWordB + '")만 뽑아 본 그림이에요.'));
+            var axisScene = el('div', {class:'screen-block'});
+            axisScene.appendChild(Components.VectorAngleDiagram({
+              Ax: vecA[ax1], Ay: vecA[ax2], Bx: vecB[ax1], By: vecB[ax2],
+              labelA:'문장1', labelB:'문장2',
+              ariaLabel: '문장1과 문장2 벡터에서 "' + axisWordA + '"·"' + axisWordB + '" 두 축만 뽑은 그림'
+            }));
+            s.appendChild(axisScene);
+          } else {
+            s.appendChild(el('p', {class:'muted'}, '핵심어가 2개 미만이라 이 그림은 건너뛸게요.'));
+          }
+          root.appendChild(s);
+        }
+      },
+      { /* step2(구 §D 통합 화면에서 분리): 코사인 계산 — CosineRecipe 재사용(각자 크기 설명은
+           W3 개정판 상속). D-2 패널은 앞 슬라이드로 이동. */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S6. 코사인 계산'));
+          if(!s4FocusConfirmed()){
+            s.appendChild(el('p', {class:'muted'}, '먼저 S4에서 두 문장을 확정하세요.'));
+            root.appendChild(s);
+            return;
+          }
+          s.appendChild(el('div', {class:'screen-prompt'}, '섹션1에서 단어에 쓴 그 코사인, 문장에도 그대로 써볼까요?'));
+
+          var tokA = s4TokensFor(DATA.focusPair[0]), tokB = s4TokensFor(DATA.focusPair[1]);
+          var vocab = s6Vocab(tokA, tokB);
+          var docsWordLists = DATA.sentences.map(function(sent){ return contentWords(sent.tokens); });
+          var vecA = sentenceVector(docsWordLists[DATA.focusPair[0]], vocab, docsWordLists, 'tf');
+          var vecB = sentenceVector(docsWordLists[DATA.focusPair[1]], vocab, docsWordLists, 'tf');
+
+          var meterHost = el('div', {'aria-live':'polite'});
+          var noteHost = el('div', {});
+          s.appendChild(Components.CosineRecipe({
+            vecA: vecA, vecB: vecB, nameA:'문장1', nameB:'문장2', unitLabel:'핵심어',
+            onDone: function(ratio){
+              meterHost.innerHTML = '';
+              meterHost.appendChild(Components.SimilarityMeter({value: ratio, label: Math.round(ratio*100) + '점 (코사인 유사도)', angle:true}));
+              noteHost.innerHTML = '';
+              var note = s6ExtremeNote(ratio);
+              if(note) noteHost.appendChild(el('p', {class:'muted'}, note));
+              var st6 = STATE.screen('S6');
+              st6.computed = true; STATE.save();
+              refreshNav();
+            }
+          }));
+          s.appendChild(meterHost);
+          s.appendChild(noteHost);
+          root.appendChild(s);
+        },
+        isComplete: function(){ return s4FocusConfirmed() && !!STATE.screen('S6').computed; }
+      },
+      { /* step3: 정리·소감 + 학습지 종료 마무리(루미 축하·최고점 요약, E-11 기본값: step3 통합) */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S6. 정리·소감'));
+          if(!s4FocusConfirmed()){
+            s.appendChild(el('p', {class:'muted'}, '먼저 S4에서 두 문장을 확정하세요.'));
+            root.appendChild(s);
+            return;
+          }
+          s.appendChild(Components.SummaryCard({color:'cream', title:'정리', body:'단어도 문장도, 손으로 만든 숫자 목록의 코사인 유사도로 "얼마나 비슷한지" 잰다.'}));
+          s.appendChild(Components.ThoughtBox({screenId:'S6', key:'thought', labelText:'소감', placeholder:'예: 문장도 결국 숫자로 비교하는구나...', onChange:function(){refreshNav();}}));
+          var w4st = STATE.screen('W4');
+          var endMsg = w4st.played ? ('게임 최고 점수는 ' + (w4st.best||0) + '점이었어요!') : '이어말하기 게임을 아직 안 했다면, W4로 돌아가 도전해봐도 좋아요.';
+          MASCOT.bubble(s, '오늘 텍스트를 숫자 벡터로 바꾸고, 코사인 유사도로 문장까지 비교했어요! ' + endMsg, {tone:'cheer'});
+          root.appendChild(s);
+        },
+        isComplete: function(){
+          var st6 = STATE.screen('S6');
+          return s4FocusConfirmed() && !!st6.computed && (st6.thought||'').trim().length > 0;
+        }
+      },
+      { /* step4: 보강(선택, 게이팅 없음) — F1 Semantris 이야기 + F4 속성벡터 vs AI 점수(온라인 시만) + F3 Embedding Projector 교사 시연 */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 인공지능은 문장 사이의 관계를 어떻게 알까?'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'S6. 더 알아보기'));
+
+          var f1 = el('div', {class:'card feature-card card-lavender'});
+          f1.appendChild(el('div', {class:'card-title'}, '더 알아보기'));
+          f1.appendChild(el('div', {class:'card-body'}, '여러분이 한 이어말하기, 구글도 만들었어요. 이름은 Semantris. 원리는 오늘 배운 것과 같아요 — 단어를 벡터로 만들고, 가까운지 잰다.'));
+          s.appendChild(f1);
+
+          /* F4: 온라인 모드일 때만 노출(요청서 원칙 그대로) — 고정 쌍이라 프록시 캐시
+             히트율이 높다. GAME.submitOnline이 쓰는 것과 같은 어댑터(fetchSimScore)를
+             재사용하므로 fetch 호출 지점이 늘어나지 않는다. */
+          if(STATE.screen('W4').mode === 'online'){
+            var pairs = [['선생님','학교'], ['고양이','강아지']];
+            var f4 = el('div', {class:'card feature-card card-peach'});
+            f4.appendChild(el('div', {class:'card-title'}, '우리 속성벡터 점수와 AI 점수 비교'));
+            var f4body = el('div', {class:'card-body'});
+            pairs.forEach(function(pair){
+              var wc = wordCosine(pair[0], pair[1]);
+              var attrScore = wc == null ? '?' : Math.round(wc*100);
+              var aiSpan = el('span', {class:'fx-pulse'}, '확인 중…');
+              f4body.appendChild(el('div', {style:{margin:'4px 0', fontSize:'14px'}},
+                [pair[0] + '·' + pair[1] + ' — 속성벡터 ' + attrScore + '점 · AI 점수 ', aiSpan]));
+              fetchSimScore(pair[0], pair[1], function(err, result){
+                if(err){ aiSpan.textContent = '연결 실패'; return; }
+                aiSpan.className = '';
+                aiSpan.textContent = result.score + '점';
+              });
+            });
+            f4.appendChild(f4body);
+            s.appendChild(f4);
+          }
+
+          /* F3: 교사 시연 카드(요청서 §F3) — 표시 전용, 게이팅 없음. 클릭 전에는 어떤
+             네트워크 요청도 발생하지 않는다(링크는 새 탭에서 이동만 한다). */
+          var f3 = el('div', {class:'card feature-card card-ochre'});
+          f3.appendChild(el('div', {class:'card-title'}, '더 알아보기 — 진짜 AI의 벡터 공간 (교사 시연)'));
+          f3.appendChild(el('div', {class:'card-body'}, [
+            '여러분이 만든 속성 벡터처럼, 실제 AI도 단어를 수백 차원의 벡터로 나타내요. Embedding Projector에서 그 공간을 3D로 둘러볼 수 있어요. ',
+            el('a', {href:'https://projector.tensorflow.org', target:'_blank', rel:'noopener'}, 'projector.tensorflow.org')
+          ]));
+          f3.appendChild(el('div', {class:'muted', style:{marginTop:'4px'}}, '(온라인 필요 · 영어 화면 · 교사가 함께 봐요)'));
+          s.appendChild(f3);
+
+          root.appendChild(s);
+        }
+      }
+    ]
+  };
+}
+
+var SCREENS = {
+  W1: buildW1(), W2: buildW2(), W3: buildW3(), W4: buildW4(),
+  S1: buildS1(), S2: buildS2(), S3: buildS3(), S4: buildS4(), S5: buildS5(), S5C: buildS5C(), S6: buildS6()
+};
+
+/* ============================================================
+   14) TEACHER — 교사 패널
+   ============================================================ */
+var TEACHER = {
+  tapCount: 0,
+  tapTimer: null,
+  _trigger: null,
+  init: function(){
+    var titleBtn = document.getElementById('appTitleBtn');
+    titleBtn.addEventListener('click', function(){
+      TEACHER.tapCount++;
+      clearTimeout(TEACHER.tapTimer);
+      TEACHER.tapTimer = setTimeout(function(){ TEACHER.tapCount = 0; }, 2500);
+      if(TEACHER.tapCount >= 5){ TEACHER.tapCount = 0; TEACHER.open(); }
+    });
+    document.addEventListener('keydown', function(e){
+      if(e.altKey && (e.key==='r' || e.key==='R')){ TEACHER.open(); }
+      if(e.key === 'Escape'){ TEACHER.close(); }
+      if(e.key === 'Tab'){ TEACHER.trapTab(e); }
+    });
+    document.getElementById('teacherCloseBtn').addEventListener('click', TEACHER.close);
+    document.getElementById('teacherResetBtn').addEventListener('click', function(){
+      var area = document.getElementById('teacherConfirmArea');
+      area.textContent = '';
+      var box = el('div', {class:'card-hairline', style:{marginTop:'10px'}});
+      box.appendChild(el('p', {style:{margin:'0 0 10px'}}, '정말 초기화할까요? 이 학습지의 진행 상황이 모두 사라집니다.'));
+      var row = el('div', {class:'btn-row'});
+      var yes = el('button', {type:'button', class:'btn btn-primary'}, '예, 초기화');
+      yes.addEventListener('click', function(){
+        /* 교사 리셋은 W4 화면 밖(닫힌 패널)에서도 눌릴 수 있으므로 GAME.stop()뿐 아니라
+           mounted 플래그·onTick도 함께 끊는다(G3/D-8 -- 리셋 후 재진입 시 새 판으로 시작). */
+        if(GAME && GAME.onScreenExit) GAME.onScreenExit();
+        STATE.reset();
+        /* ROUTER.go()는 _transitioning 중이면 무시되어 리셋이 씹힐 수 있다 -- render()는 이 가드를
+           거치지 않고 즉시 다시 그린다(screenId는 STATE.reset()이 이미 DEFAULT_STATE()의 'W1'로 설정). */
+        ROUTER.render();
+        TEACHER.close();
+        toast('초기화되었습니다.');
+      });
+      var no = el('button', {type:'button', class:'btn btn-secondary'}, '아니오');
+      no.addEventListener('click', function(){
+        area.textContent = '';
+        document.getElementById('teacherResetBtn').focus({preventScroll:true});
+      });
+      row.appendChild(yes); row.appendChild(no);
+      box.appendChild(row);
+      area.appendChild(box);
+      yes.focus({preventScroll:true});
+    });
+  },
+  open: function(){
+    TEACHER._trigger = document.activeElement;
+    document.getElementById('teacherPanel').classList.add('open');
+    document.getElementById('teacherConfirmArea').textContent = '';
+    var shell = document.querySelector('.app-shell');
+    if(shell) shell.setAttribute('aria-hidden', 'true');
+    var first = document.getElementById('teacherPanel').querySelector(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+    if(first) first.focus({preventScroll:true});
+  },
+  close: function(){
+    var panel = document.getElementById('teacherPanel');
+    if(!panel.classList.contains('open')) return;
+    panel.classList.remove('open');
+    var shell = document.querySelector('.app-shell');
+    if(shell) shell.removeAttribute('aria-hidden');
+    var trigger = TEACHER._trigger || document.getElementById('appTitleBtn');
+    TEACHER._trigger = null;
+    trigger.focus({preventScroll:true});
+  },
+  /* 모달이 열려 있는 동안 Tab을 패널 안의 컨트롤끼리만 순환시킨다(포커스 트랩). */
+  trapTab: function(e){
+    var panel = document.getElementById('teacherPanel');
+    if(!panel.classList.contains('open')) return;
+    var focusables = panel.querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+    if(!focusables.length) return;
+    var list = Array.prototype.slice.call(focusables);
+    var first = list[0], last = list[list.length-1];
+    var inside = panel.contains(document.activeElement);
+    if(e.shiftKey){
+      if(!inside || document.activeElement === first){ e.preventDefault(); last.focus({preventScroll:true}); }
+    } else {
+      if(!inside || document.activeElement === last){ e.preventDefault(); first.focus({preventScroll:true}); }
+    }
+  }
+};
+
+/* ============================================================
+   15) BOOT
+   ============================================================ */
+function boot(){
+  STATE.load();
+  ROUTER.screenEl = document.getElementById('screenRoot');
+  MASCOT.mountMini();
+  TEACHER.init();
+  document.getElementById('prevBtn').addEventListener('click', function(){ ROUTER.prev(); });
+  document.getElementById('nextBtn').addEventListener('click', function(){ ROUTER.next(); });
+  /* ←→ 화면·step 내비. 입력 요소(입력칸·선택상자 포함 모든 input)에 포커스가 있거나
+     IME 조합 중이면 무시하고, 이미 다른 위젯이 이 키를 처리했다면(e.defaultPrevented)도
+     무시한다 — 전수 감사 결과(2026-07-19) 이 학습지에는 화살표키를 소비하는 위젯이 없어
+     충돌 없이 안전하다. */
+  document.addEventListener('keydown', function(e){
+    if(e.isComposing || e.keyCode === 229) return;
+    if(e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    var tag = document.activeElement && document.activeElement.tagName;
+    if(tag==='INPUT' || tag==='TEXTAREA' || tag==='SELECT') return;
+    if(e.defaultPrevented) return;
+    if(e.key === 'ArrowLeft'){ ROUTER.prev(); } else { ROUTER.next(); }
+  });
+  ROUTER.render();
+}
+
+if(document.readyState === 'loading'){
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}
+
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>2026년 수학체험센터 여름방학캠프 — AI로 만나는 수학, AI에 깃든 수학</title>
+<style>
+/* ============================================================
+   디자인 토큰 (DESIGN-clay.md 상속 — 학습지 4종과 동일 계열)
+   ============================================================ */
+:root{
+  --primary:#0a0a0a; --primary-active:#1f1f1f; --primary-disabled:#e5e5e5;
+  --ink:#0a0a0a; --body-c:#3a3a3a; --body-strong:#1a1a1a;
+  --muted:#6a6a6a; --muted-soft:#9a9a9a;
+  --hairline:#e5e5e5; --hairline-soft:#f0f0f0;
+  --canvas:#fffaf0; --surface-soft:#faf5e8; --surface-card:#f5f0e0; --surface-strong:#ebe6d6;
+  --on-primary:#ffffff;
+  --brand-pink:#ff4d8b; --brand-teal:#1a3a3a; --brand-lavender:#b8a4ed;
+  --brand-peach:#ffb084; --brand-ochre:#e8b94a; --brand-mint:#a4d4c5; --brand-coral:#ff6b5a;
+  --val-true:#2ea043; --sel:#2f6df0;
+  --r-xs:6px; --r-sm:8px; --r-md:12px; --r-lg:16px; --r-xl:24px; --r-pill:9999px;
+  --sp-xxs:4px; --sp-xs:8px; --sp-sm:12px; --sp-md:16px; --sp-lg:24px; --sp-xl:32px; --sp-xxl:48px;
+  --font-body:'Inter',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Segoe UI','Malgun Gothic',Roboto,sans-serif;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--canvas); color:var(--body-c); font-family:var(--font-body);
+  font-size:16px; line-height:1.55; -webkit-text-size-adjust:100%;
+}
+h1,h2,h3{ color:var(--ink); font-weight:500; letter-spacing:-0.02em; margin:0 0 var(--sp-sm); }
+h2{font-size:22px; line-height:1.2;}
+p{margin:0 0 var(--sp-sm);}
+button{font-family:inherit;}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+:focus-visible{outline:3px solid var(--sel); outline-offset:2px;}
+
+.wrap{max-width:960px;margin:0 auto;padding:0 var(--sp-lg) var(--sp-xxl);}
+
+/* ---------- 히어로 ---------- */
+.hero{display:flex;gap:var(--sp-xl);align-items:center;padding:var(--sp-xxl) 0 var(--sp-xl);}
+.hero-text{flex:1 1 auto;min-width:0;}
+.eyebrow{font-size:12px;font-weight:600;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;margin-bottom:var(--sp-sm);}
+.title-btn{background:none;border:none;padding:0;cursor:pointer;text-align:left;color:var(--ink);
+  font-family:inherit;font-weight:500;letter-spacing:-0.03em;
+  font-size:clamp(30px,5.2vw,48px);line-height:1.12;}
+.subtitle{font-size:clamp(18px,2.8vw,24px);font-weight:600;color:var(--body-strong);letter-spacing:-0.01em;margin:var(--sp-sm) 0 var(--sp-md);}
+.hero-meta{display:flex;gap:var(--sp-xs);flex-wrap:wrap;align-items:center;}
+.hero-art{flex:0 0 220px;background:var(--surface-soft);border-radius:var(--r-xl);padding:var(--sp-md);display:flex;align-items:center;justify-content:center;}
+.hero-art img{max-width:100%;height:auto;display:block;border-radius:var(--r-lg);}
+.hero-art .art-fallback{font-size:64px;line-height:1;padding:var(--sp-xl) var(--sp-lg);}
+@media (max-width:760px){
+  .hero{flex-direction:column-reverse;align-items:flex-start;padding-top:var(--sp-xl);}
+  .hero-art{flex:none;align-self:center;max-width:200px;}
+}
+
+/* ---------- 공통 pill·버튼 ---------- */
+.pill{display:inline-flex;align-items:center;gap:5px;border-radius:var(--r-pill);padding:5px 12px;font-size:13px;font-weight:600;background:var(--surface-card);color:var(--ink);}
+.pill-oncard{background:rgba(255,255,255,.92);color:var(--ink);}
+.pill-done{background:var(--val-true);color:#fff;}
+.pill-muted{background:var(--surface-strong);color:var(--muted);}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:10px 20px;border-radius:var(--r-md);font-size:14px;font-weight:600;border:1px solid transparent;cursor:pointer;text-decoration:none;touch-action:manipulation;}
+.btn-primary{background:var(--primary);color:var(--on-primary);}
+.btn-primary:hover{background:var(--primary-active);}
+.btn-oncard{background:rgba(255,255,255,.96);color:var(--ink);}
+.btn-oncard:hover{background:#fff;}
+.btn-secondary{background:var(--canvas);color:var(--ink);border-color:var(--hairline);}
+.btn-secondary:hover{border-color:var(--ink);}
+.btn-locked{background:var(--primary-disabled);color:var(--muted);cursor:not-allowed;}
+
+/* ---------- 학습 경로 ---------- */
+.section{margin-top:var(--sp-xl);}
+.section-note{font-size:14px;color:var(--muted);margin-bottom:var(--sp-md);}
+.path-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--sp-md);}
+.path-card{border-radius:var(--r-xl);padding:var(--sp-lg);display:flex;gap:var(--sp-md);align-items:center;flex-wrap:wrap;}
+.card-teal{background:var(--brand-teal);color:#fff;}
+.card-teal .path-title,.card-teal .path-desc{color:#fff;}
+.card-lavender{background:var(--brand-lavender);}
+.card-peach{background:var(--brand-peach);}
+.card-ochre{background:var(--brand-ochre);}
+.card-locked{background:var(--surface-card);}
+.card-locked .path-title{color:var(--muted);}
+.card-locked .path-desc{color:var(--muted-soft);}
+.num-chip{flex:none;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;background:rgba(255,255,255,.96);color:var(--ink);}
+.card-locked .num-chip{background:var(--surface-strong);color:var(--muted);}
+.path-body{flex:1 1 220px;min-width:0;}
+.path-title{font-size:18px;font-weight:600;color:var(--ink);letter-spacing:-0.01em;margin:0 0 2px;}
+.path-desc{font-size:14px;color:var(--body-strong);margin:0 0 var(--sp-xs);}
+.path-state{display:flex;gap:var(--sp-xs);flex-wrap:wrap;align-items:center;}
+.path-action{flex:none;display:flex;align-items:center;}
+@media (max-width:560px){
+  .path-card{align-items:flex-start;}
+  .path-action{width:100%;}
+  .path-action .btn{width:100%;}
+}
+
+/* ---------- 보너스 ---------- */
+.bonus-list{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-md);}
+@media (max-width:700px){ .bonus-list{grid-template-columns:1fr;} }
+.bonus-card{border-radius:var(--r-xl);padding:var(--sp-lg);background:var(--surface-card);display:flex;flex-direction:column;gap:var(--sp-xs);}
+.bonus-card .dot{width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:6px;vertical-align:baseline;}
+.dot-mint{background:var(--brand-mint);}
+.dot-coral{background:var(--brand-coral);}
+.bonus-title{font-size:17px;font-weight:600;color:var(--ink);margin:0;}
+.bonus-desc{font-size:14px;color:var(--body-c);margin:0 0 var(--sp-xs);}
+.bonus-card.locked .bonus-title{color:var(--muted);}
+.bonus-card.locked .bonus-desc{color:var(--muted-soft);}
+.bonus-foot{margin-top:auto;display:flex;gap:var(--sp-xs);align-items:center;flex-wrap:wrap;}
+
+/* ---------- 푸터 ---------- */
+.footer{margin-top:var(--sp-xxl);background:var(--surface-soft);border-radius:var(--r-xl);padding:var(--sp-lg);font-size:13px;color:var(--muted);text-align:center;}
+
+/* ---------- 교사 모달 ---------- */
+.modal-overlay{position:fixed;inset:0;background:rgba(10,10,10,.45);display:none;align-items:center;justify-content:center;padding:var(--sp-lg);z-index:50;}
+.modal-overlay.open{display:flex;}
+.modal{background:var(--canvas);border-radius:var(--r-xl);padding:var(--sp-lg);max-width:460px;width:100%;max-height:85vh;overflow-y:auto;}
+.modal h2{font-size:18px;}
+.teacher-row{display:flex;justify-content:space-between;gap:var(--sp-sm);align-items:center;padding:8px 0;border-bottom:1px solid var(--hairline-soft);font-size:14px;}
+.teacher-row:last-of-type{border-bottom:none;}
+.card-hairline{background:var(--canvas);border:1px solid var(--hairline);border-radius:var(--r-lg);padding:var(--sp-md);}
+.btn-row{display:flex;flex-wrap:wrap;gap:var(--sp-xs);align-items:center;margin-top:var(--sp-sm);}
+
+/* ---------- 토스트 ---------- */
+.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(12px);background:var(--ink);color:#fff;
+  border-radius:var(--r-pill);padding:10px 20px;font-size:14px;font-weight:600;opacity:0;pointer-events:none;
+  transition:opacity .25s ease, transform .25s ease;z-index:60;max-width:90vw;text-align:center;}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+/* ---------- 등장 애니메이션 ---------- */
+.fade-in{animation:fadeIn .4s ease both;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+@media (prefers-reduced-motion: reduce){
+  .fade-in{animation:none;}
+  .toast{transition:none;}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero fade-in">
+    <div class="hero-text">
+      <div class="eyebrow">Math × AI</div>
+      <h1 style="margin:0;"><button type="button" id="titleBtn" class="title-btn">2026년 수학체험센터 여름방학캠프</button></h1>
+      <p class="subtitle">AI로 만나는 수학, AI에 깃든 수학</p>
+      <div class="hero-meta">
+        <span class="pill" id="overallPill">학습지 완료 0 / 4</span>
+      </div>
+    </div>
+    <div class="hero-art" id="heroArt">
+      <img src="assets/lumi.png" alt="캠프 마스코트 루미" id="lumiImg">
+    </div>
+  </header>
+
+  <main>
+    <section class="section" aria-labelledby="pathHead">
+      <h2 id="pathHead">학습 경로</h2>
+      <p class="section-note">순서대로 진행해요 — 학습지 하나를 <strong>완료</strong>하면 다음 학습지가 열려요. (완료 = 마지막 화면까지 가서 소감 적기)</p>
+      <ol class="path-list" id="pathList"></ol>
+    </section>
+
+    <section class="section" aria-labelledby="bonusHead">
+      <h2 id="bonusHead">보너스 활동</h2>
+      <p class="section-note" id="bonusNote">학습지 4개를 모두 완료하면 열려요. 인터넷이 필요한 외부 사이트이고, 새 창에서 열려요.</p>
+      <div class="bonus-list" id="bonusList"></div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    2026년 수학체험센터 여름방학캠프 · AI로 만나는 수학, AI에 깃든 수학
+  </footer>
+</div>
+
+<div class="modal-overlay" id="teacherOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="teacherHead">
+    <h2 id="teacherHead">교사 패널 — 진행 현황</h2>
+    <div id="teacherStatus"></div>
+    <p class="section-note" style="margin-top:12px;">전체 초기화는 이 기기의 <strong>모든 학습지(4개) 진행 기록</strong>을 지웁니다. 회차(반) 교체 시 사용하세요. 학습지 하나만 초기화하려면 그 학습지의 교사 패널(제목 5번 탭 또는 Alt+R)을 이용하세요.</p>
+    <div class="btn-row">
+      <button type="button" class="btn btn-primary" id="teacherResetBtn">전체 초기화</button>
+      <button type="button" class="btn btn-secondary" id="teacherCloseBtn">닫기</button>
+    </div>
+    <div id="teacherConfirmArea"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+'use strict';
+
+/* ============================================================
+   학습지 상태 계약 (각 학습지의 localStorage 스키마에 의존)
+   - 각 앱은 단일 키에 JSON을 저장하며 version === 2 만 유효.
+   - "완료" 판정은 각 앱의 마지막 화면 게이트와 동일한 규칙:
+     · logic  : screens.L11.thought 작성        (L11 step4 isComplete)
+     · ai     : screens.s7.thought 작성         (s7 reflect isComplete)
+     · img    : screens['S3-4'].thought 작성    (S3-4 step3 isComplete)
+     · txt    : screens.S6.computed && thought  (S6 step3 isComplete.
+                s4FocusConfirmed는 재구현하지 않는다 — computed·thought 모두
+                S4 확정 이후에만 만들어질 수 있어 실질 동치)
+   - 앱 스키마가 version 3으로 바뀌면 이 판정도 함께 갱신할 것.
+   ============================================================ */
+function txtOf(v){ return typeof v === 'string' ? v.trim() : ''; }
+function scr(s, id){ return (s && s.screens && s.screens[id]) ? s.screens[id] : null; }
+
+var APPS = [
+  { id:'logic', file:'logic.html', key:'aimath26_logic_state',
+    title:'논리 연산', desc:'인공지능은 참과 거짓을 어떻게 판단할까?',
+    cardClass:'card-teal', dark:true,
+    screens:['L1','L2','L3','L4','L5','L6','L7','L8','L9','L10','L11'],
+    isDone:function(s){ var t = scr(s,'L11'); return !!t && txtOf(t.thought).length > 0; } },
+  { id:'ai', file:'ai-thinking.html', key:'aimath26_ai_state',
+    title:'AI는 어떻게 생각을 할까?', desc:'지뢰찾기 게임으로 배우는 세 가지 학습 방법',
+    cardClass:'card-lavender', dark:false,
+    screens:['s1','s2','s3','s4','s5','s6','s7'],
+    isDone:function(s){ var t = scr(s,'s7'); return !!t && txtOf(t.thought).length > 0; } },
+  { id:'img', file:'image-data.html', key:'aimath26_img_state',
+    title:'이미지 데이터 처리', desc:'컴퓨터는 어떻게 사진을 볼까?',
+    cardClass:'card-peach', dark:false,
+    screens:['P1-1','P1-2','P1-3','P1-4','P1-5','P2-1','P2-2','P2-3','S2-1','S2-2','S2-3','S2-4','S2-5','S2-6','S3-1','S3-2','S3-3','S3-4'],
+    isDone:function(s){ var t = scr(s,'S3-4'); return !!t && txtOf(t.thought).length > 0; } },
+  { id:'txt', file:'text-data.html', key:'aimath26_txt_state',
+    title:'텍스트 데이터 처리', desc:'인공지능은 단어와 문장의 관계를 어떻게 알까?',
+    cardClass:'card-ochre', dark:false,
+    screens:['W1','W2','W3','W4','S1','S2','S3','S4','S5','S5C','S6'],
+    isDone:function(s){ var t = scr(s,'S6'); return !!t && !!t.computed && txtOf(t.thought).length > 0; } }
+];
+
+var BONUS = [
+  { title:'인피니티 크래프트 (단어 만들기)', dotClass:'dot-mint',
+    desc:'단어와 단어를 합쳐 새로운 단어를 만들어보세요.',
+    url:'https://script.google.com/macros/s/AKfycbyWD277wblx7tnequD6HVc_9-UEYlmDlZ6NT5-zoBwaNgse7doYhvJizT7PRYJYeW9U/exec' },
+  { title:'단어 사칙연산', dotClass:'dot-coral',
+    desc:'단어끼리 더하고 빼면 어떤 단어가 나올까요?',
+    url:'https://script.google.com/macros/library/d/139xhMgmKaY2e07SAWHy5chos5yYLz5_PA9ejP_XEGMtRBB76Rbu5l3TO/2' }
+];
+
+function readState(key){
+  try{
+    var raw = localStorage.getItem(key);
+    if(!raw) return null;
+    var d = JSON.parse(raw);
+    if(!d || d.version !== 2) return null;
+    return d;
+  }catch(e){ return null; }
+}
+
+/* 앱별 상태 요약: {started, done, pos, total} */
+function appStatus(app){
+  var s = readState(app.key);
+  var done = !!s && app.isDone(s);
+  var pos = 0;
+  if(s && typeof s.screenId === 'string'){
+    var i = app.screens.indexOf(s.screenId);
+    if(i >= 0) pos = i + 1;
+  }
+  return { started: !!s, done: done, pos: pos, total: app.screens.length };
+}
+
+function el(tag, attrs, children){
+  var e = document.createElement(tag);
+  if(attrs){
+    for(var k in attrs){
+      var v = attrs[k];
+      if(v == null) continue;
+      if(k === 'class') e.className = v;
+      else if(k.indexOf('on') === 0 && typeof v === 'function') e.addEventListener(k.slice(2), v);
+      else if(k === 'style' && typeof v === 'object'){ for(var sk in v) e.style[sk] = v[sk]; }
+      else e.setAttribute(k, v);
+    }
+  }
+  if(children){
+    (Array.isArray(children) ? children : [children]).forEach(function(c){
+      if(c == null) return;
+      e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    });
+  }
+  return e;
+}
+
+var toastTimer = null;
+function toast(msg){
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 2600);
+}
+
+/* 직전 렌더의 완료 배열 — "방금 완료" 감지(돌아왔을 때 축하 토스트) */
+var prevDoneMap = null;
+
+function renderAll(){
+  var statuses = APPS.map(appStatus);
+  var doneCount = statuses.filter(function(st){ return st.done; }).length;
+
+  document.getElementById('overallPill').textContent = '학습지 완료 ' + doneCount + ' / ' + APPS.length;
+
+  /* 방금 새로 완료된 학습지 축하 */
+  if(prevDoneMap){
+    for(var d=0; d<APPS.length; d++){
+      if(statuses[d].done && !prevDoneMap[d]){
+        toast('「' + APPS[d].title + '」 완료! ' + (d < APPS.length-1 ? '다음 학습지가 열렸어요 🎉' : '학습지를 전부 끝냈어요 🎉'));
+        break;
+      }
+    }
+  }
+  prevDoneMap = statuses.map(function(st){ return st.done; });
+
+  /* ---- 학습 경로 카드 ---- */
+  var list = document.getElementById('pathList');
+  list.innerHTML = '';
+  APPS.forEach(function(app, i){
+    var st = statuses[i];
+    var unlocked = (i === 0) || statuses[i-1].done;
+    var li = el('li', {});
+    var card = el('div', {class:'path-card ' + (unlocked ? app.cardClass : 'card-locked')});
+    card.appendChild(el('span', {class:'num-chip', 'aria-hidden':'true'}, String(i+1)));
+
+    var body = el('div', {class:'path-body'});
+    body.appendChild(el('p', {class:'path-title'}, app.title));
+    body.appendChild(el('p', {class:'path-desc'}, app.desc));
+    var state = el('div', {class:'path-state'});
+    if(st.done){
+      state.appendChild(el('span', {class:'pill pill-done'}, '✓ 완료'));
+    }else if(!unlocked){
+      state.appendChild(el('span', {class:'pill pill-muted'}, '🔒 잠김 — 이전 학습지를 완료하면 열려요'));
+    }else if(st.started && st.pos > 0){
+      state.appendChild(el('span', {class:'pill pill-oncard'}, '진행 중 · 화면 ' + st.pos + '/' + st.total));
+    }else{
+      state.appendChild(el('span', {class:'pill pill-oncard'}, '도전 가능'));
+    }
+    body.appendChild(state);
+    card.appendChild(body);
+
+    var action = el('div', {class:'path-action'});
+    if(unlocked){
+      var label = st.done ? '다시 보기' : (st.started && st.pos > 1 ? '이어하기' : '시작하기');
+      action.appendChild(el('a', {
+        class:'btn btn-oncard',
+        href: app.file,
+        'aria-label': app.title + ' ' + label
+      }, label));
+    }else{
+      action.appendChild(el('button', {
+        type:'button', class:'btn btn-locked', disabled:'disabled',
+        'aria-label': app.title + ' 잠김'
+      }, '잠김'));
+    }
+    card.appendChild(action);
+    li.appendChild(card);
+    list.appendChild(li);
+  });
+
+  /* ---- 보너스 ---- */
+  var allDone = doneCount === APPS.length;
+  var bonusList = document.getElementById('bonusList');
+  bonusList.innerHTML = '';
+  document.getElementById('bonusNote').textContent = allDone
+    ? '수고했어요! 남는 시간에 자유롭게 도전해보세요. 인터넷이 필요한 외부 사이트이고, 새 창에서 열려요.'
+    : '학습지 4개를 모두 완료하면 열려요. 인터넷이 필요한 외부 사이트이고, 새 창에서 열려요.';
+  BONUS.forEach(function(b){
+    var card = el('div', {class:'bonus-card' + (allDone ? '' : ' locked')});
+    var titleRow = el('p', {class:'bonus-title'});
+    titleRow.appendChild(el('span', {class:'dot ' + b.dotClass, 'aria-hidden':'true'}));
+    titleRow.appendChild(document.createTextNode(b.title));
+    card.appendChild(titleRow);
+    card.appendChild(el('p', {class:'bonus-desc'}, b.desc));
+    var foot = el('div', {class:'bonus-foot'});
+    if(allDone){
+      foot.appendChild(el('a', {class:'btn btn-primary', href:b.url, target:'_blank', rel:'noopener',
+        'aria-label': b.title + ' 새 창에서 열기'}, '열기 ↗'));
+    }else{
+      foot.appendChild(el('span', {class:'pill pill-muted'}, '🔒 잠김'));
+    }
+    card.appendChild(foot);
+    bonusList.appendChild(card);
+  });
+
+  /* ---- 교사 패널 현황 ---- */
+  var tStatus = document.getElementById('teacherStatus');
+  tStatus.innerHTML = '';
+  APPS.forEach(function(app, i){
+    var st = statuses[i];
+    var stateTxt = st.done ? '완료' : (st.started ? ('진행 중 · 화면 ' + st.pos + '/' + st.total) : '시작 전');
+    var row = el('div', {class:'teacher-row'});
+    row.appendChild(el('span', {}, (i+1) + '. ' + app.title));
+    row.appendChild(el('strong', {}, stateTxt));
+    tStatus.appendChild(row);
+  });
+}
+
+/* ============================================================
+   교사 패널 (학습지와 동일 제스처: 제목 5번 탭 / Alt+R, Escape 닫기)
+   ============================================================ */
+var TEACHER = {
+  tapCount: 0, tapTimer: null, lastFocus: null,
+  init: function(){
+    var titleBtn = document.getElementById('titleBtn');
+    titleBtn.addEventListener('click', function(){
+      TEACHER.tapCount++;
+      clearTimeout(TEACHER.tapTimer);
+      TEACHER.tapTimer = setTimeout(function(){ TEACHER.tapCount = 0; }, 2500);
+      if(TEACHER.tapCount >= 5){ TEACHER.tapCount = 0; TEACHER.open(); }
+    });
+    document.addEventListener('keydown', function(e){
+      if(e.altKey && (e.key === 'r' || e.key === 'R')){ TEACHER.open(); }
+      if(e.key === 'Escape'){ TEACHER.close(); }
+    });
+    document.getElementById('teacherCloseBtn').addEventListener('click', function(){ TEACHER.close(); });
+    document.getElementById('teacherResetBtn').addEventListener('click', function(){
+      var area = document.getElementById('teacherConfirmArea');
+      area.textContent = '';
+      var box = el('div', {class:'card-hairline', style:{marginTop:'10px'}});
+      box.appendChild(el('p', {style:{margin:'0 0 10px'}}, '정말 전체 초기화할까요? 이 기기의 학습지 4개 진행 기록이 모두 사라집니다.'));
+      var row = el('div', {class:'btn-row'});
+      var yes = el('button', {type:'button', class:'btn btn-primary'}, '예, 전체 초기화');
+      yes.addEventListener('click', function(){
+        try{
+          var keys = Object.keys(localStorage);
+          for(var i=0;i<keys.length;i++){
+            if(keys[i].indexOf('aimath26_') === 0) localStorage.removeItem(keys[i]);
+          }
+        }catch(e){}
+        prevDoneMap = null; /* 초기화 직후 렌더가 "방금 완료"로 오인하지 않도록 리셋 */
+        renderAll();
+        TEACHER.close();
+        toast('전체 초기화되었습니다.');
+      });
+      var no = el('button', {type:'button', class:'btn btn-secondary'}, '아니오');
+      no.addEventListener('click', function(){ area.textContent = ''; });
+      row.appendChild(yes); row.appendChild(no);
+      box.appendChild(row);
+      area.appendChild(box);
+    });
+    /* 오버레이 클릭(모달 밖)으로 닫기 */
+    document.getElementById('teacherOverlay').addEventListener('click', function(e){
+      if(e.target === this) TEACHER.close();
+    });
+    /* 단순 포커스 트랩: 모달 열림 중 Tab 순환 */
+    document.addEventListener('keydown', function(e){
+      if(e.key !== 'Tab') return;
+      var overlay = document.getElementById('teacherOverlay');
+      if(!overlay.classList.contains('open')) return;
+      var focusables = overlay.querySelectorAll('button, a[href]');
+      if(!focusables.length) return;
+      var first = focusables[0], last = focusables[focusables.length-1];
+      if(e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+      else if(!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+    });
+  },
+  open: function(){
+    TEACHER.lastFocus = document.activeElement;
+    renderAll();
+    document.getElementById('teacherConfirmArea').textContent = '';
+    document.getElementById('teacherOverlay').classList.add('open');
+    document.getElementById('teacherCloseBtn').focus();
+  },
+  close: function(){
+    var overlay = document.getElementById('teacherOverlay');
+    if(!overlay.classList.contains('open')) return;
+    overlay.classList.remove('open');
+    /* D7: display:none 내부에 포커스를 남기지 않는다 — lastFocus가 body 등 비복원 대상이면 제목 버튼으로 폴백 */
+    var target = (TEACHER.lastFocus && document.contains(TEACHER.lastFocus) && TEACHER.lastFocus !== document.body)
+      ? TEACHER.lastFocus : document.getElementById('titleBtn');
+    if(target && typeof target.focus === 'function') target.focus();
+  }
+};
+
+/* 마스코트 폴백(학습지 공통 패턴): 이미지 로드 실패 시 이모지 대체 */
+(function(){
+  var img = document.getElementById('lumiImg');
+  img.addEventListener('error', function(){
+    var host = document.getElementById('heroArt');
+    img.remove();
+    host.appendChild(el('div', {class:'art-fallback', 'aria-hidden':'true'}, '🌟'));
+  });
+})();
+
+/* ============================================================
+   상태 새로고침: 로드·복귀(pageshow/bfcache)·포커스·타 탭 저장(storage)
+   ============================================================ */
+window.addEventListener('pageshow', function(){ renderAll(); });
+window.addEventListener('focus', function(){ renderAll(); });
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState === 'visible') renderAll();
+});
+window.addEventListener('storage', function(e){
+  if(!e.key || e.key.indexOf('aimath26_') === 0) renderAll();
+});
+
+TEACHER.init();
+renderAll();
+})();
+</script>
+</body>
+</html>
