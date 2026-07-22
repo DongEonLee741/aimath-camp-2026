@@ -1,0 +1,1861 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>리뷰 감성 분석기 제작 가이드</title>
+<style>
+/* ============================================================
+   디자인 토큰 (DESIGN-clay.md 상속 — 크림 캔버스·잉크·teal/lavender/peach/ochre 카드)
+   ============================================================ */
+:root{
+  --primary:#0a0a0a; --primary-active:#1f1f1f; --primary-disabled:#e5e5e5;
+  --ink:#0a0a0a; --body-c:#3a3a3a; --body-strong:#1a1a1a;
+  --muted:#6a6a6a; --muted-soft:#9a9a9a;
+  --hairline:#e5e5e5; --hairline-soft:#f0f0f0;
+  --canvas:#fffaf0; --surface-soft:#faf5e8; --surface-card:#f5f0e0; --surface-strong:#ebe6d6;
+  --on-primary:#ffffff;
+  --brand-pink:#ff4d8b; --brand-teal:#1a3a3a; --brand-lavender:#b8a4ed;
+  --brand-peach:#ffb084; --brand-ochre:#e8b94a; --brand-mint:#a4d4c5; --brand-coral:#ff6b5a;
+
+  --r-xs:6px; --r-sm:8px; --r-md:12px; --r-lg:16px; --r-xl:24px; --r-pill:9999px;
+
+  --sp-xxs:4px; --sp-xs:8px; --sp-sm:12px; --sp-md:16px; --sp-lg:24px; --sp-xl:32px; --sp-xxl:48px; --sp-section:96px;
+
+  --incl:#1d54c9;
+  --good:#186b2c; --good-bg:rgba(46,160,67,.14);
+  --bad:#a91d21; --bad-bg:rgba(229,72,77,.14);
+
+  --font-body:'Inter',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Segoe UI','Malgun Gothic',Roboto,sans-serif;
+  --font-mono:ui-monospace,SFMono-Regular,Consolas,'Malgun Gothic',monospace;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;height:100%;overflow:hidden;}
+body{
+  background:var(--canvas); color:var(--body-c); font-family:var(--font-body);
+  font-size:16px; line-height:1.55; -webkit-text-size-adjust:100%;
+}
+h1,h2,h3{ color:var(--ink); font-weight:500; letter-spacing:-0.02em; margin:0 0 var(--sp-sm); }
+h1{font-size:28px; line-height:1.15;}
+h2{font-size:22px; line-height:1.2;}
+h3{font-size:17px; line-height:1.3;}
+p{margin:0 0 var(--sp-sm);}
+button{font-family:inherit;}
+table{border-collapse:separate;border-spacing:0;}
+code{font-family:var(--font-mono);background:var(--surface-card);padding:1px 6px;border-radius:4px;font-size:0.92em;}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+:focus-visible{outline:3px solid var(--incl); outline-offset:2px;}
+
+/* ---------- 앱 셸 (1뷰포트: header·screen-root·bottom-nav, text-data.html 이식) ---------- */
+.app-shell{max-width:960px;margin:0 auto;height:100vh;height:100dvh;display:flex;flex-direction:column;padding:0 var(--sp-md);}
+.app-header{flex:none;background:var(--canvas);z-index:20;padding:var(--sp-sm) 0;border-bottom:1px solid var(--hairline);}
+.header-top{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-sm);}
+.app-title-btn{background:none;border:none;padding:2px 4px;cursor:pointer;text-align:left;font:inherit;min-height:44px;display:inline-flex;align-items:center;}
+.app-title{font-size:15px;font-weight:600;color:var(--ink);letter-spacing:-0.01em;}
+.section-tag{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:0.02em;}
+.mascot-mini{width:34px;height:34px;flex:none;}
+.progress-track{display:flex;gap:4px;margin-top:var(--sp-xs);}
+.progress-seg{flex:1;height:6px;border-radius:var(--r-pill);background:var(--hairline);overflow:hidden;position:relative;}
+.progress-seg .fill{position:absolute;inset:0;background:var(--ink);width:0%;transition:width .25s ease;}
+.progress-seg.section-done .fill{background:var(--good);}
+
+.screen-root{flex:1;min-height:0;position:relative;overflow:hidden;}
+.view-pane{position:absolute; inset:0; height:100%; padding:var(--sp-lg) 0; overflow-y:auto; transition:transform .28s cubic-bezier(.455,.03,.515,.955), opacity .28s cubic-bezier(.455,.03,.515,.955);}
+.view-pane.pane-active{transform:translateX(0);opacity:1;}
+.view-pane.pane-enter-right{transform:translateX(48px);opacity:0;}
+.view-pane.pane-enter-left{transform:translateX(-48px);opacity:0;}
+.view-pane.pane-exit-left{transform:translateX(-48px);opacity:0;}
+.view-pane.pane-exit-right{transform:translateX(48px);opacity:0;}
+.view-pane.pane-enter-right,.view-pane.pane-enter-left,.view-pane.pane-exit-left,.view-pane.pane-exit-right{pointer-events:none;}
+.step-dots{display:flex;gap:6px;justify-content:center;margin:0 0 var(--sp-sm);}
+.step-dot{width:7px;height:7px;border-radius:50%;background:var(--hairline);}
+.step-dot.active{background:var(--ink);width:18px;border-radius:var(--r-pill);}
+.screen{animation:screenIn .28s ease both;}
+@keyframes screenIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+.screen-eyebrow{font-size:13px;font-weight:600;color:var(--muted);letter-spacing:0.02em;margin-bottom:4px;}
+.screen-title{margin-bottom:var(--sp-sm);}
+.screen-prompt{font-size:17px;color:var(--body-strong);background:var(--surface-soft);border-radius:var(--r-lg);padding:var(--sp-md);margin-bottom:var(--sp-md);}
+.screen-block{margin-bottom:var(--sp-lg);}
+.muted{color:var(--muted);font-size:14px;}
+
+/* ---------- 버튼 ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:10px 20px;border-radius:var(--r-md);font-size:14px;font-weight:600;border:1px solid transparent;cursor:pointer;touch-action:manipulation;text-decoration:none;}
+.btn-primary{background:var(--primary);color:var(--on-primary);}
+.btn-primary:hover{background:var(--primary-active);}
+.btn-primary:disabled{background:var(--primary-disabled);color:var(--muted);cursor:not-allowed;}
+.btn-secondary{background:var(--canvas);color:var(--ink);border-color:var(--hairline);}
+.btn-secondary:hover{border-color:var(--ink);}
+.btn-sm{min-height:44px;padding:6px 14px;font-size:13px;}
+.btn-row{display:flex;flex-wrap:wrap;gap:var(--sp-xs);align-items:center;}
+
+/* ---------- 카드 ---------- */
+.card{border-radius:var(--r-xl);padding:var(--sp-lg);}
+.card-title{font-size:15px;font-weight:700;margin-bottom:6px;opacity:.85;}
+.card-body{font-size:16px;font-weight:600;line-height:1.6;}
+.card-teal{background:var(--brand-teal);color:var(--on-primary);}
+.card-hairline{background:var(--canvas);border:1px solid var(--hairline);border-radius:var(--r-lg);padding:var(--sp-md);}
+
+/* ---------- 생각칸 ---------- */
+.thought-box{background:var(--surface-soft);border-radius:var(--r-lg);padding:var(--sp-md);margin:var(--sp-md) 0;}
+.thought-label{display:block;font-size:13px;font-weight:700;color:var(--body-strong);margin-bottom:6px;}
+.thought-input{width:100%;min-height:64px;border:1px solid var(--hairline);border-radius:var(--r-md);padding:10px 12px;font:inherit;font-size:15px;resize:vertical;background:var(--canvas);color:var(--ink);}
+.thought-input:focus{border-color:var(--incl);}
+
+/* ---------- 토스트 / 하단내비 / 교사패널 ---------- */
+.toast{position:fixed;left:50%;bottom:88px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:var(--r-pill);font-size:14px;z-index:60;max-width:90vw;text-align:center;}
+.toast:empty{display:none;}
+.bottom-nav{flex:none;background:var(--canvas);border-top:1px solid var(--hairline);padding:10px var(--sp-md);display:flex;align-items:center;justify-content:space-between;gap:var(--sp-sm);z-index:30;}
+.nav-status{font-size:12px;color:var(--muted);}
+.teacher-panel{display:none;position:fixed;inset:0;background:rgba(10,10,10,.5);z-index:80;align-items:center;justify-content:center;padding:var(--sp-md);}
+.teacher-panel.open{display:flex;}
+.teacher-card{background:var(--canvas);border-radius:var(--r-xl);padding:var(--sp-xl);max-width:420px;width:100%;}
+
+/* ---------- 게임필(최소) ---------- */
+.fx-pop{animation:fxPop .32s cubic-bezier(.34,1.56,.64,1);}
+@keyframes fxPop{0%{transform:scale(1);}45%{transform:scale(1.16);}100%{transform:scale(1);}}
+.confetti-piece{position:absolute;width:8px;height:8px;border-radius:2px;pointer-events:none;}
+
+/* ---------- 체크행 / 마스코트 ---------- */
+.check-row{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:var(--body-strong);min-height:44px;cursor:pointer;}
+.check-row input[type=checkbox]{width:20px;height:20px;flex:none;}
+.mascot-row{display:flex;align-items:flex-start;gap:10px;margin:var(--sp-sm) 0;}
+.mascot-avatar{width:48px;height:48px;border-radius:50%;overflow:hidden;flex:none;background:var(--brand-lavender);display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--ink);}
+.mascot-avatar img{width:100%;height:100%;object-fit:cover;display:block;}
+.mascot-avatar.mascot-fallback::after{content:'✦';}
+.mascot-mini.mascot-fallback::after{content:'✦';font-size:16px;display:flex;align-items:center;justify-content:center;height:100%;color:var(--brand-lavender);}
+.mascot-bubble{background:var(--canvas);border:1px solid var(--hairline);border-radius:var(--r-lg);border-top-left-radius:4px;padding:10px 14px;font-size:14px;color:var(--body-strong);max-width:560px;}
+.mascot-bubble.tone-cheer{background:#eef6ec;border-color:var(--good);}
+
+/* ---------- 세그 토글(기기 탭) ---------- */
+.seg-toggle{display:inline-flex;background:var(--surface-strong);border-radius:var(--r-pill);padding:4px;gap:2px;flex-wrap:wrap;}
+.seg-btn{min-height:44px;padding:6px 16px;border-radius:var(--r-pill);border:none;background:transparent;color:var(--muted);font-size:13px;font-weight:700;cursor:pointer;}
+.seg-btn.active{background:var(--ink);color:var(--on-primary);}
+
+/* ---------- 배너 ---------- */
+.banner{display:flex;gap:10px;align-items:flex-start;background:var(--surface-card);border-left:4px solid var(--brand-ochre);border-radius:var(--r-md);padding:12px 14px;font-size:14px;color:var(--body-strong);margin:8px 0;}
+.banner .banner-icon{flex:none;font-size:18px;line-height:1.3;}
+
+/* ---------- 접이식(FAQ·심화) ---------- */
+details.faq-item{border:1px solid var(--hairline);border-radius:var(--r-md);padding:10px 14px;margin:8px 0;background:var(--canvas);}
+details.faq-item summary{cursor:pointer;font-weight:700;color:var(--ink);min-height:44px;display:flex;align-items:center;}
+details.faq-item[open] summary{margin-bottom:6px;}
+.faq-body{font-size:14px;color:var(--body-c);}
+
+/* ---------- 데모 박스(M1) ---------- */
+.demo-box{background:var(--surface-soft);border-radius:var(--r-lg);padding:var(--sp-md);margin:var(--sp-sm) 0;}
+.preset-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;}
+.demo-input-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px;}
+.demo-input-row input[type=text]{flex:1;min-width:180px;min-height:44px;border:1px solid var(--hairline);border-radius:var(--r-md);padding:8px 12px;font:inherit;font-size:15px;background:var(--canvas);color:var(--ink);}
+.demo-result{background:var(--canvas);border:1px solid var(--hairline);border-radius:var(--r-lg);padding:12px 14px;margin-top:8px;}
+.demo-result:empty{display:none;padding:0;border:none;margin:0;}
+.demo-total{font-size:15px;font-weight:700;color:var(--body-strong);}
+.demo-verdict{font-size:20px;font-weight:800;margin:4px 0;}
+.demo-verdict.v-pos{color:var(--good);}
+.demo-verdict.v-neg{color:var(--bad);}
+.demo-verdict.v-neu{color:var(--muted);}
+.found-list{margin:6px 0 0;padding-left:18px;font-size:14px;color:var(--body-c);}
+
+/* ---------- 프롬프트 블록(복사) ---------- */
+.prompt-block{background:var(--surface-soft);border:1px solid var(--hairline);border-radius:var(--r-lg);padding:var(--sp-md);margin:8px 0;}
+.prompt-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap;}
+.prompt-head span{font-weight:700;font-size:13px;color:var(--muted);}
+.prompt-pre{white-space:pre-wrap;word-break:break-word;font-family:var(--font-mono);font-size:13.5px;line-height:1.65;color:var(--body-strong);margin:0;max-height:340px;overflow-y:auto;}
+.example-quote{background:var(--surface-card);border-radius:var(--r-md);padding:10px 14px;font-size:14px;color:var(--body-strong);margin-top:6px;}
+
+/* ---------- 표(M3 단어표·M6 테스트표) ---------- */
+.table-wrap{overflow-x:auto;margin:8px 0;}
+.word-table,.test-table{width:100%;border-collapse:separate;border-spacing:0;font-size:14px;min-width:420px;}
+.word-table th,.word-table td,.test-table th,.test-table td{border:1px solid var(--hairline);padding:6px 8px;text-align:left;vertical-align:middle;}
+.word-table th,.test-table th{background:var(--surface-soft);font-weight:700;color:var(--body-strong);font-size:13px;}
+.word-table input[type=text],.test-table input[type=text]{width:100%;min-height:44px;border:1px solid var(--hairline);border-radius:var(--r-sm);padding:6px 8px;font:inherit;font-size:15px;background:var(--canvas);color:var(--ink);box-sizing:border-box;}
+.word-table select,.test-table select{min-height:44px;border:1px solid var(--hairline);border-radius:var(--r-sm);padding:6px 8px;font:inherit;font-size:14px;background:var(--canvas);color:var(--ink);}
+.match-badge{font-weight:800;font-size:13px;}
+.match-badge.ok{color:var(--good);}
+.match-badge.bad{color:var(--bad);}
+.match-badge:empty{display:none;}
+.row-tag{font-weight:700;font-size:13px;color:var(--body-strong);white-space:nowrap;}
+
+/* ---------- 임계값 ---------- */
+.threshold-row{display:flex;flex-wrap:wrap;gap:var(--sp-lg);align-items:flex-end;margin:8px 0;}
+.threshold-field{display:flex;flex-direction:column;gap:4px;}
+.threshold-field label{font-size:13px;font-weight:700;color:var(--body-strong);}
+.threshold-field select{min-height:44px;min-width:96px;border:1px solid var(--hairline);border-radius:var(--r-md);padding:8px 10px;font:inherit;font-size:15px;background:var(--canvas);color:var(--ink);}
+.threshold-field input[type=number]{min-height:44px;min-width:76px;border:1px solid var(--hairline);border-radius:var(--r-md);padding:8px 10px;font:inherit;font-size:15px;background:var(--canvas);color:var(--ink);-moz-appearance:textfield;}
+/* 네이티브 스핀 버튼(▲▼)은 44px 터치 타깃을 만들 수 없어 숨긴다 — 직접 입력 경로만 사용 */
+.threshold-field input[type=number]::-webkit-inner-spin-button,
+.threshold-field input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
+.inline-warn{color:var(--bad);font-size:13px;font-weight:700;margin-top:6px;}
+.inline-warn:empty{display:none;}
+
+@media (prefers-reduced-motion: reduce){
+  *{animation-duration:.001s !important; transition-duration:.001s !important;}
+}
+@media (max-width:600px){
+  .app-shell{padding:0 var(--sp-sm);}
+  h1{font-size:22px;}
+  .threshold-row{gap:var(--sp-md);}
+}
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <header class="app-header">
+    <div class="header-top">
+      <button type="button" class="app-title-btn" id="appTitleBtn" aria-label="리뷰 감성 분석기 제작 학습지, 다섯 번 누르면 교사 패널">
+        <span class="app-title" id="appTitle">리뷰 감성 분석기 제작</span>
+      </button>
+      <span class="mascot-mini" id="mascotMini" aria-hidden="true"></span>
+    </div>
+    <div class="section-tag" id="sectionTag">웹 앱 만들어 보기 · Gemini로 나만의 감성 분석기 만들기</div>
+    <div class="progress-track" id="progressTrack"></div>
+  </header>
+  <main class="screen-root" id="screenRoot" tabindex="-1"></main>
+  <nav class="bottom-nav">
+    <button type="button" class="btn btn-secondary" id="prevBtn">이전</button>
+    <span class="nav-status" id="navStatus" aria-live="off">1 / 7</span>
+    <button type="button" class="btn btn-primary" id="nextBtn">다음</button>
+  </nav>
+</div>
+
+<div class="teacher-panel" id="teacherPanel">
+  <div class="teacher-card" role="dialog" aria-modal="true" aria-labelledby="teacherTitle">
+    <h2 id="teacherTitle">교사 패널</h2>
+    <p class="muted">이 학습지의 저장 데이터(aimath26_maker_ 네임스페이스)만 초기화합니다. 다른 학습지에는 영향이 없습니다.</p>
+    <div id="teacherConfirmArea"></div>
+    <div class="btn-row" style="margin-top:var(--sp-md);">
+      <button type="button" class="btn btn-primary" id="teacherResetBtn">전체 초기화</button>
+      <button type="button" class="btn btn-secondary" id="teacherCloseBtn">닫기</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="sr-only" id="liveRegion" aria-live="polite"></div>
+
+<script>
+window.__MAKER_DEMO__ = {"dict":{"최고":2,"맛있":2,"좋":1,"별로":-1,"실망":-2,"최악":-3},"posT":2,"negT":-2};
+window.__MAKER_RULES__ = {"minWords":6,"wordRows":8,"thrGap":2,"m4ChecklistCount":5,"reviewCount":100};
+/* §5-B REVIEWS_100 — 정본: reviewinsight_lite_dashboard (3).html mockReviews 100개 전문 (순서·문구 그대로)
+   SHA-256(\n join) = 9b82ea8b8417091830dec33e2efa4651cb86d3303778873fe84165cddf2cb00f — verify_maker.py O-5가 대조한다. 임의 수정 금지. */
+window.__MAKER_REVIEWS__ = [
+  "배송도 진짜 빠르고 포장 상태도 아주 완벽하고 훌륭합니다. 적극 추천!",
+  "가격 대비 품질이 기대 이하네요. 마감이 엉망이라 많이 아쉽습니다.",
+  "매장에 직접 문의했을 때 직원분이 너무 친절하게 응대해 주셔서 감동했어요.",
+  "사이즈가 생각했던 것보다 많이 작네요. 디자인은 마음에 드는데 반품합니다.",
+  "가성비 하나는 정말 세계 최고인 것 같아요. 저렴한 금액에 잘 샀습니다.",
+  "택배 박스가 다 찢겨져서 도착했어요. 내용물도 긁혀 있어서 불만스럽습니다.",
+  "재질이 고급스럽고 박음질도 아주 깔끔합니다. 내구성이 좋아 보여 만족합니다.",
+  "전화 상담 문의했는데 피드백도 엄청 늦고 서비스가 최악이네요.",
+  "색상이 화면이랑 너무 다른 거 같아요. 실물은 좀 촌스러워서 실망했습니다.",
+  "배송 기사님이 친절하셔서 기분이 좋았습니다. 배송 속도도 아주 만족해요.",
+  "가격은 저렴한데 품질은 아주 훌륭합니다. 가성비 좋은 상품이네요.",
+  "지인 추천으로 샀는데 기대했던 만큼 정말 너무 만족스럽고 마음에 듭니다.",
+  "마감이 깔끔하지 않아서 올이 다 풀려 있어요. 아쉽네요.",
+  "배송도 다음날 바로 도착하고 포장상태 역시 에어캡으로 튼튼하게 왔어요.",
+  "친절한 서비스와 빠른 응대 덕분에 아주 만족스럽게 쇼핑하고 갑니다.",
+  "너무 비싸서 망설였는데 품질을 보니 돈 아깝지 않네요. 완벽합니다.",
+  "소재가 얇아서 세탁 몇 번 하면 다 늘어날 것 같습니다. 내구성이 실망이네요.",
+  "문의 답변이 너무 불친절하고 귀찮아하는 티가 팍팍 나서 다신 이용 안 함.",
+  "포장이 꼼꼼해서 안전하게 상처 하나 없이 잘 도착했네요. 아주 빠릅니다.",
+  "소문만큼 최고입니다! 성능 완벽하고 소음도 적어서 대만족 중입니다.",
+  "가성비 최고의 아이템! 금액 대비 정말 쓸만하고 만족해요.",
+  "배송 예정일보다 3일이나 늦게 도착해서 급했는데 너무 불편하고 실망이 큽니다.",
+  "디자인도 예쁘고 소재도 짱짱해요. 다만 사이즈 교환 상담이 너무 귀찮네요.",
+  "매우 저렴한 가격에 득템했습니다. 디자인도 트렌디하고 예쁘네요.",
+  "품질도 엉망이고 판매자 서비스 마인드도 완전 실망이라 최악의 경험입니다.",
+  "빠른 택배 덕분에 주말 전에 받았어요. 꼼꼼한 포장도 추천 포인트입니다.",
+  "가격이 좀 비싸긴 한데 고급스럽고 예뻐서 후회는 절대 없습니다.",
+  "마감이 부실해서 실밥이 줄줄 나오네요. 대충 만든 것 같아 불만입니다.",
+  "소리 소문 없이 택배가 집 앞에 덩그러니 놓여 있어 황당했네요. 노크라도 좀...",
+  "디자인 깔끔하고 크기도 딱 적당합니다. 주변 지인들에게 추천했어요.",
+  "가격 장벽만 넘으면 최고의 만족도를 주는 좋은 제품이 맞네요.",
+  "사용 설명서가 너무 대충 써져 있어서 기계 작동법을 알아내는 게 너무 어렵네요.",
+  "단골 매장인데 이번 문의는 너무 서비스가 미흡해서 아쉽고 속상했습니다.",
+  "품질이 정말 너무 나쁘다. 이 돈 주고 살 제품이 아니니 절대 사지 마세요.",
+  "배송도 총알 같고 상태도 아주 깨끗해요. 잘 쓰겠습니다.",
+  "가성비가 그렇게 좋은지는 잘 모르겠어요. 평범한 상품입니다.",
+  "상담사분이 정중하게 문제를 바로 해결해 주셔서 아주 기분 좋았어요.",
+  "천 소재가 너무 부드럽고 가벼워서 여름에 입기 딱 좋네요.",
+  "배송은 정말 빠르나 택배 상자 안에 뽁뽁이가 없어서 불안해 보였습니다.",
+  "품질적인 부분에서 전혀 아쉬움이 없을 정도로 완벽한 제품입니다.",
+  "기능도 평범하고 이만한 가격대에 더 좋은 대체재가 많을 것 같아요.",
+  "친절한 고객 대응에 매번 크게 만족하고 있습니다. 단골할게요.",
+  "가성비 최악. 실물 디자인도 별로고 조립 품질도 조잡합니다.",
+  "배송 출발은 빨랐는데 택배 허브에서 이틀 동안 묶여 있어서 속 터졌어요.",
+  "포장이 정말 럭셔리하게 와서 선물용으로 최고입니다. 만족합니다.",
+  "조금 무겁고 부피가 생각보다 커서 보관하기는 다소 불편하고 아쉽네요.",
+  "상담 연결이 하늘의 별 따기입니다. 한 시간 동안 전화 대기만 했어요.",
+  "매우 추천합니다! 소재가 아주 튼튼해서 오랫동안 잘 쓸 수 있겠네요.",
+  "가격이 너무 사악해요. 물론 퀄리티는 좋지만 가성비는 안 좋은 듯.",
+  "기사님이 경비실에 말도 안 하고 맡겨둬서 한참 찾으러 다녔네요. 별로입니다.",
+  "내구성이 너무 튼튼해서 떨어뜨려도 기스 하나 안 나요. 품질 최고!",
+  "디자인이 세련되어 어디에 둬도 인테리어 효과가 나고 엄청 만족스럽습니다.",
+  "저렴하게 파는 이유가 다 있네요. 품질 상태가 많이 아쉽고 실망입니다.",
+  "고객 센터 직원분이 대답을 단답형으로 퉁명스럽게 하셔서 기분이 참 별로네요.",
+  "안전하게 2중 포장되어 무사히 빨리 받았습니다. 만족해요.",
+  "가성비의 대명사답습니다. 적당한 가격에 이 정도 품질이면 합격점입니다.",
+  "사용 시 조작법이 헷갈리고 마감이 정교하지 못해 디자인 가치가 떨어집니다.",
+  "배송이 엄청 지연되었는데 사전에 문자 알림도 없어서 서비스에 실망했습니다.",
+  "품질은 무난한데 포장이 깔끔하지 못하고 허름하게 왔어요.",
+  "상담사님의 신속하고 깔끔한 업무 처리에 매우 감동받았습니다. 감사해요.",
+  "가격 거품이 너무 심한 제품 같아요. 기대 이하라서 솔직히 별로입니다.",
+  "가볍고 그립감이 좋아 매일 잘 사용하고 있습니다. 품질에 만족해요.",
+  "포장 박스가 찌그러져 왔으나 본품에는 이상이 없었습니다. 배송은 무난해요.",
+  "처음 쓰자마자 고장 났는데, 품질 관리가 전혀 안 되는 회사인가요?",
+  "엄청 친절하게 상담해 주셔서 기쁘게 구매 결정했습니다.",
+  "이 가격에 이런 고퀄리티 디자인을 가질 수 있다는 것 자체가 축복입니다.",
+  "택배기사님이 항상 같은 분이신데 엄청 빠르고 친절하세요.",
+  "마감이 다소 엉성하고 실밥 처리가 아쉽네요. 가격만큼 하는 것 같아요.",
+  "포장이 너무 과도해서 쓰레기가 많이 나오네요. 조금 아쉬운 부분입니다.",
+  "품질, 디자인, 가격 삼박자 모두 완벽합니다. 무조건 추천!",
+  "가격은 착한데 품질은 아주 나빠서 한 번 쓰고 버려야 할 정도입니다.",
+  "문의 응대가 너무 부실해요. 같은 내용만 로봇처럼 복사해서 붙이네요.",
+  "기대보다 배송이 하루 늦었지만 포장이 완벽해서 참습니다.",
+  "소재가 탄탄해서 자주 세탁해도 줄어들지 않아요. 아주 훌륭합니다.",
+  "가성비 대비 별로입니다. 조금 더 주고 좋은 거 살 걸 그랬어요.",
+  "매우 친절한 목소리로 안내해 주셔서 마음이 편안해졌습니다.",
+  "실물이 훨씬 영롱하고 예쁘네요. 사이즈가 아주 맞춤처럼 딱 맞아요.",
+  "배송 속도가 상상 초월이네요. 어제 오후에 샀는데 오늘 아침 배송 완료!",
+  "품질이 너무 허접해요. 장난감 같은 느낌이라 대단히 실망스럽습니다.",
+  "가격 거품 없이 정직하게 파는 것 같아 만족스럽고 고맙습니다.",
+  "포장을 뜯었을 때 냄새가 너무 심하게 나서 베란다에 3일 동안 널어놨네요.",
+  "서비스 대응 능력이 떨어지는 것 같습니다. 피드백이 너무 기계적이에요.",
+  "소재 마감이 거칠거칠해서 피부가 민감하신 분들은 아쉬울 것 같습니다.",
+  "가성비 있게 막 쓰기 좋습니다. 배송도 안전하고 무난합니다.",
+  "디자인이 너무 화려해서 실물은 좀 부담스럽고 별로네요.",
+  "문의 사항을 친절하게 다 알려 주셔서 큰 막힘없이 해결했습니다.",
+  "배송이 너무 안 오길래 확인해 봤더니 누락됐었다네요. 관리 소홀 실망입니다.",
+  "가격 대비 이만한 퀄리티는 다른 데선 절대 못 살 것 같습니다.",
+  "품질 아주 최고입니다! 한 달 동안 써보고 쓰는 후기인데 강추해요.",
+  "디자인 마무리가 깔끔하게 똑 떨어져서 엄청 고급져 보여요.",
+  "택배 박스가 비에 다 젖어서 왔습니다. 다행히 제품은 비닐 포장이라 살았네요.",
+  "불친절함의 끝판왕이네요. 서비스 태도 다시 교육하셔야 할 듯.",
+  "가성비가 기가 막힙니다. 착한 가격에 좋은 퀄리티를 경험하네요.",
+  "품질이 약해서 살짝 스쳤는데도 기스가 바로 갑니다. 내구성이 실망이네요.",
+  "배송은 정말 초고속인데, 정작 물건 품질이 좀 조잡해서 아쉬움이 큽니다.",
+  "매번 친절하게 처리해 주셔서 기분 좋은 매장입니다.",
+  "금액대가 살짝 부담이긴 하지만 디자인과 퀄리티가 만족감을 줍니다.",
+  "실밥 정리나 단추 박음질 상태가 엉망이라 직접 바느질해서 씁니다. 귀찮네요.",
+  "배송 기사님이 무뚝뚝하고 박스를 거의 던져두고 가셔서 실망했습니다.",
+  "정말 최고라는 수식어가 아깝지 않은 명품 품질입니다. 적극 추천합니다!"
+];
+(function(){
+'use strict';
+
+/* ============================================================
+   1) STATE — 전역 상태 + localStorage (단일 키 aimath26_maker_state)
+   ============================================================ */
+var STORAGE_KEY = 'aimath26_maker_state';
+var NS_PREFIX = 'aimath26_maker_';
+
+function mergeDefaults(def, saved){
+  if(Array.isArray(def)){
+    return Array.isArray(saved) ? saved : def.slice();
+  }
+  if(def && typeof def === 'object'){
+    var keys = Object.keys(def);
+    if(keys.length === 0){
+      return (saved && typeof saved === 'object' && !Array.isArray(saved)) ? saved : {};
+    }
+    var out = {};
+    for(var k in def){ out[k] = mergeDefaults(def[k], saved ? saved[k] : undefined); }
+    return out;
+  }
+  return saved !== undefined ? saved : def;
+}
+
+function emptyWordRow(){ return {word:'', score:''}; }
+function emptyTestRow(){ return {text:'', expect:'', actual:''}; }
+
+function DEFAULT_STATE(){
+  return {
+    version: 2,
+    screenId: 'M1',
+    screens: {
+      M1: { step:0 },
+      M2: { step:0, checks:[false,false,false,false] },
+      M3: { step:0,
+        pos:[emptyWordRow(),emptyWordRow(),emptyWordRow(),emptyWordRow(),emptyWordRow(),emptyWordRow(),emptyWordRow(),emptyWordRow()],
+        neg:[emptyWordRow(),emptyWordRow(),emptyWordRow(),emptyWordRow(),emptyWordRow(),emptyWordRow(),emptyWordRow(),emptyWordRow()],
+        calcCheck:false, posT:'', negT:'' },
+      M4: { step:0, gotPrompt:false, checklist:[false,false,false,false,false] },
+      M5: { step:0, deviceTab:'notebook', notebookCheck:false, tabletCheck:false },
+      M6: { step:0, rows:[emptyTestRow(),emptyTestRow(),emptyTestRow()], batch:{pos:'', neu:'', neg:''} },
+      M7: { step:0, thought:'' }
+    }
+  };
+}
+
+/* [v1.2] 구버전 상태 이행 — 저장분 행 수·체크리스트 길이가 신규 규칙 상수보다 짧으면 채운다 */
+function padM3Rows(st3){ while(st3.pos.length < window.__MAKER_RULES__.wordRows) st3.pos.push(emptyWordRow());
+  while(st3.neg.length < window.__MAKER_RULES__.wordRows) st3.neg.push(emptyWordRow()); }
+function padM4Checklist(st4){ while(st4.checklist.length < window.__MAKER_RULES__.m4ChecklistCount) st4.checklist.push(false); }
+
+var STATE = {
+  data: null,
+  load: function(){
+    var loaded = null;
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(raw) loaded = JSON.parse(raw);
+    }catch(e){ loaded = null; }
+    if(loaded && loaded.version !== 2){ loaded = null; }
+    this.data = mergeDefaults(DEFAULT_STATE(), loaded);
+    padM3Rows(this.data.screens.M3);
+    padM4Checklist(this.data.screens.M4);
+    if(ROUTER.index(this.data.screenId) < 0){ this.data.screenId = 'M1'; }
+    this.save();
+  },
+  save: function(){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data)); }catch(e){}
+  },
+  reset: function(){
+    try{
+      var keys = Object.keys(localStorage);
+      for(var i=0;i<keys.length;i++){ if(keys[i].indexOf(NS_PREFIX) === 0) localStorage.removeItem(keys[i]); }
+    }catch(e){}
+    this.data = DEFAULT_STATE();
+    this.save();
+  },
+  screen: function(id){ return this.data.screens[id]; }
+};
+
+/* ============================================================
+   2) ROUTER — 화면·서브 슬라이드(step) 목록·이동·진행바 (text-data.html 셸 이식)
+   ============================================================ */
+var SCREEN_DEFS = [
+  {id:'M1', label:'오늘 만드는 것'},
+  {id:'M2', label:'나만의 제작 코치 만들기'},
+  {id:'M3', label:'코치와 대화: 내 설계 정하기'},
+  {id:'M4', label:'최종 제작 프롬프트'},
+  {id:'M5', label:'생성·저장·실행'},
+  {id:'M6', label:'내 분석기 시험하기'},
+  {id:'M7', label:'마무리: 오늘의 연결'}
+];
+
+function currentMod(){ return SCREENS[STATE.data.screenId]; }
+function stepCountOf(mod){ return (mod && mod.steps && mod.steps.length) ? mod.steps.length : 0; }
+function currentStepIdx(){
+  var mod = currentMod();
+  var n = stepCountOf(mod);
+  if(!n) return 0;
+  var st = STATE.screen(STATE.data.screenId);
+  var idx = (st && typeof st.step === 'number') ? st.step : 0;
+  if(idx < 0) idx = 0;
+  if(idx > n-1) idx = n-1;
+  return idx;
+}
+function mountCurrentView(pane){
+  var mod = currentMod();
+  if(!mod) return mod;
+  var n = stepCountOf(mod);
+  if(n){
+    var idx = currentStepIdx();
+    mod.steps[idx].mount(pane);
+    renderStepDots(pane, mod, idx);
+  } else {
+    mod.mount(pane);
+  }
+  return mod;
+}
+function renderStepDots(pane, mod, idx){
+  if(!mod.steps || mod.steps.length<2) return;
+  var row = el('div', {class:'step-dots'});
+  for(var i=0;i<mod.steps.length;i++){
+    row.appendChild(el('span', {class:'step-dot'+(i===idx?' active':''), 'aria-hidden':'true'}));
+  }
+  row.appendChild(el('span', {class:'sr-only'}, (idx+1) + ' / ' + mod.steps.length + ' 단계'));
+  pane.insertBefore(row, pane.firstChild);
+}
+function focusView(pane){
+  var heading = pane.querySelector('h1, h2');
+  var target = heading || pane;
+  if(!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+  target.focus({preventScroll:true});
+}
+function focusFirstControl(pane, selector){
+  var target = selector ? pane.querySelector(selector) : null;
+  if(!target){
+    target = pane.querySelector('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+  }
+  if(!target){ focusView(pane); return; }
+  target.focus({preventScroll:true});
+}
+function announceViewChange(def){
+  var mod = currentMod();
+  var n = stepCountOf(mod);
+  if(n){ announce(def.label + ' 화면, ' + (currentStepIdx()+1) + ' / ' + n + ' 단계'); }
+  else { announce(def.label + ' 화면'); }
+}
+
+var ROUTER = {
+  screenEl: null,
+  activePane: null,
+  _transitioning: false,
+  _transitionTimer: null,
+  index: function(id){ for(var i=0;i<SCREEN_DEFS.length;i++){ if(SCREEN_DEFS[i].id===id) return i; } return -1; },
+  go: function(id, opts){
+    opts = opts || {};
+    if(this.index(id) < 0 || this._transitioning) return;
+    var mod = SCREENS[id];
+    var tgtState = STATE.data.screens[id];
+    var n = stepCountOf(mod);
+    if(n){
+      if(opts.enterStep === 'last') tgtState.step = n-1;
+      else if(opts.enterStep === 'first') tgtState.step = 0;
+      else if(typeof tgtState.step !== 'number' || tgtState.step<0 || tgtState.step>=n) tgtState.step = 0;
+    }
+    STATE.data.screenId = id;
+    STATE.save();
+    this.transitionTo(opts.dir || 'next', {silent: opts.silent});
+  },
+  canGoNext: function(){
+    var mod = currentMod();
+    if(!mod) return true;
+    var n = stepCountOf(mod);
+    if(n){
+      var step = mod.steps[currentStepIdx()];
+      return step && typeof step.isComplete === 'function' ? !!step.isComplete() : true;
+    }
+    return typeof mod.isComplete === 'function' ? !!mod.isComplete() : true;
+  },
+  next: function(){
+    if(this._transitioning) return;
+    var mod = currentMod();
+    var n = stepCountOf(mod);
+    if(n){
+      var stAll = STATE.screen(STATE.data.screenId);
+      var idx = (typeof stAll.step === 'number') ? stAll.step : 0;
+      if(idx < n-1){
+        if(!this.canGoNext()) return;
+        stAll.step = idx+1;
+        STATE.save();
+        this.transitionTo('next', {});
+        return;
+      }
+    }
+    if(!this.canGoNext()) return;
+    var i = this.index(STATE.data.screenId);
+    if(i < SCREEN_DEFS.length-1){ this.go(SCREEN_DEFS[i+1].id, {dir:'next', enterStep:'first'}); return; }
+    toast('학습을 마쳤어요!');
+    announce('학습을 마쳤어요.');
+  },
+  prev: function(){
+    if(this._transitioning) return;
+    var mod = currentMod();
+    var n = stepCountOf(mod);
+    if(n){
+      var stAll = STATE.screen(STATE.data.screenId);
+      var idx = (typeof stAll.step === 'number') ? stAll.step : 0;
+      if(idx > 0){
+        stAll.step = idx-1;
+        STATE.save();
+        this.transitionTo('prev', {});
+        return;
+      }
+    }
+    var i = this.index(STATE.data.screenId);
+    if(i>0){ this.go(SCREEN_DEFS[i-1].id, {dir:'prev', enterStep:'last'}); }
+  },
+  refresh: function(focusSelector){
+    this._rebuild();
+    focusFirstControl(this.activePane, focusSelector);
+  },
+  render: function(){
+    this._rebuild();
+    focusView(this.activePane);
+  },
+  _rebuild: function(){
+    if(this._transitionTimer){ clearTimeout(this._transitionTimer); this._transitionTimer = null; }
+    this._transitioning = false;
+    var i = this.index(STATE.data.screenId);
+    var def = SCREEN_DEFS[i];
+    this.screenEl.innerHTML = '';
+    var pane = el('div', {class:'view-pane pane-active'});
+    this.screenEl.appendChild(pane);
+    mountCurrentView(pane);
+    this.activePane = pane;
+    renderProgress(i, def);
+    renderNav(i);
+  },
+  transitionTo: function(dir, opts){
+    opts = opts || {};
+    var self = this;
+    var i = this.index(STATE.data.screenId);
+    var def = SCREEN_DEFS[i];
+    var oldPane = this.activePane;
+    var newPane = el('div', {class:'view-pane'});
+    this.screenEl.appendChild(newPane);
+    mountCurrentView(newPane);
+    renderProgress(i, def);
+    renderNav(i);
+    if(FX.reducedMotion){
+      if(oldPane) oldPane.remove();
+      newPane.classList.add('pane-active');
+      this.activePane = newPane;
+      focusView(newPane);
+      if(!opts.silent) announceViewChange(def);
+      return;
+    }
+    var enterCls = dir==='prev' ? 'pane-enter-left' : 'pane-enter-right';
+    var exitCls = dir==='prev' ? 'pane-exit-right' : 'pane-exit-left';
+    self._transitioning = true;
+    newPane.classList.add(enterCls);
+    void newPane.offsetWidth;
+    if(oldPane) oldPane.classList.add(exitCls);
+    requestAnimationFrame(function(){
+      newPane.classList.remove(enterCls);
+      newPane.classList.add('pane-active');
+    });
+    if(self._transitionTimer){ clearTimeout(self._transitionTimer); }
+    self._transitionTimer = setTimeout(function(){
+      self._transitionTimer = null;
+      if(oldPane) oldPane.remove();
+      self.activePane = newPane;
+      self._transitioning = false;
+      focusView(newPane);
+      if(!opts.silent) announceViewChange(def);
+    }, 300);
+  }
+};
+
+function renderProgress(i, def){
+  var track = document.getElementById('progressTrack');
+  track.innerHTML = '';
+  track.setAttribute('aria-hidden', 'true');
+  SCREEN_DEFS.forEach(function(s, idx){
+    var seg = document.createElement('span');
+    seg.className = 'progress-seg' + (idx < i ? ' section-done' : '');
+    var fill = document.createElement('span');
+    fill.className = 'fill';
+    fill.style.width = (idx <= i ? '100%' : '0%');
+    seg.appendChild(fill);
+    track.appendChild(seg);
+  });
+}
+
+var _lastGateEnabled = null;
+function renderNav(i){
+  var prevBtn = document.getElementById('prevBtn');
+  var nextBtn = document.getElementById('nextBtn');
+  var status = document.getElementById('navStatus');
+  var mod = SCREENS[SCREEN_DEFS[i].id];
+  var n = stepCountOf(mod);
+  var stepIdx = n ? currentStepIdx() : 0;
+  var atFirstStep = !n || stepIdx===0;
+  var atLastStep = !n || stepIdx===n-1;
+  prevBtn.style.visibility = (i>0 || !atFirstStep) ? 'visible' : 'hidden';
+  var isLast = (i === SCREEN_DEFS.length-1) && atLastStep;
+  nextBtn.textContent = isLast ? '완료' : '다음';
+  var enabled = ROUTER.canGoNext();
+  setDisabled(nextBtn, !enabled);
+  var stepTxt = n>1 ? (' · ' + (stepIdx+1) + '/' + n + '단계') : '';
+  var gateTxt = enabled ? '' : ' · 아직 완료되지 않았어요';
+  status.textContent = (i+1) + ' / ' + SCREEN_DEFS.length + ' · ' + SCREEN_DEFS[i].label + stepTxt + gateTxt;
+  if(!enabled && _lastGateEnabled !== false){ announce('다음으로 넘어가려면 이 화면을 먼저 완료하세요.'); }
+  _lastGateEnabled = enabled;
+}
+function refreshNav(){
+  var i = ROUTER.index(STATE.data.screenId);
+  renderNav(i);
+}
+
+/* ============================================================
+   3) 공용 헬퍼 — el(), setDisabled(D7), announce, toast, mdText, copyText
+   ============================================================ */
+function el(tag, attrs, children){
+  var e = document.createElement(tag);
+  if(attrs){
+    for(var k in attrs){
+      var v = attrs[k];
+      if(v == null) continue;
+      if(k === 'class') e.className = v;
+      else if(k.indexOf('on') === 0 && typeof v === 'function') e.addEventListener(k.slice(2), v);
+      else if(k === 'style' && typeof v === 'object'){ for(var sk in v) e.style[sk] = v[sk]; }
+      else e.setAttribute(k, v);
+    }
+  }
+  if(children){
+    (Array.isArray(children) ? children : [children]).forEach(function(c){
+      if(c == null) return;
+      e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    });
+  }
+  return e;
+}
+function setDisabled(btn, disabled){
+  var hadFocus = document.activeElement === btn;
+  btn.disabled = disabled;
+  if(disabled && hadFocus){
+    var root = document.getElementById('screenRoot');
+    if(root) root.focus({preventScroll:true});
+  }
+}
+function announce(msg){
+  var lr = document.getElementById('liveRegion');
+  if(lr) lr.textContent = msg;
+}
+var toastTimer = null;
+function toast(msg){
+  var t = document.getElementById('toast');
+  if(!t) return;
+  t.textContent = msg;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ t.textContent = ''; }, 2400);
+}
+/* "**굵게**" 마크다운만 파싱해 텍스트노드/<strong> 배열로 반환(명세 문구 굵기 표시 전용, 그 외 마크다운 미지원) */
+function mdText(str){
+  var parts = String(str == null ? '' : str).split('**');
+  var nodes = [];
+  for(var i=0;i<parts.length;i++){
+    if(parts[i] === '') continue;
+    if(i % 2 === 1){ nodes.push(el('strong', {}, parts[i])); }
+    else { nodes.push(document.createTextNode(parts[i])); }
+  }
+  return nodes;
+}
+function signed(n){ return (n>=0?'+':'') + n; }
+/* navigator.clipboard 우선, 실패 시 임시 textarea 선택+execCommand 폴백. 성공 시 토스트. */
+function copyText(text, successMsg){
+  function ok(){ toast(successMsg || '복사했어요.'); }
+  function fallback(){
+    try{
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly','');
+      ta.style.position='fixed'; ta.style.top='-9999px'; ta.style.left='-9999px';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      ta.setSelectionRange(0, text.length);
+      var success = false;
+      try{ success = document.execCommand('copy'); }catch(e){ success=false; }
+      document.body.removeChild(ta);
+      if(success) ok(); else toast('복사에 실패했어요. 직접 선택해 복사해 주세요.');
+    }catch(e){ toast('복사에 실패했어요. 직접 선택해 복사해 주세요.'); }
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(ok, fallback);
+  } else {
+    fallback();
+  }
+}
+
+/* ============================================================
+   4) MASCOT — 루미 + 말풍선 (assets/lumi.png 없어도 graceful fallback)
+   ============================================================ */
+var MASCOT = {
+  mountMini: function(){
+    var host = document.getElementById('mascotMini');
+    if(!host || host.childNodes.length) return;
+    var img = el('img', {alt:'', style:{width:'100%',height:'100%',objectFit:'cover',display:'block',borderRadius:'50%'}, src:'assets/lumi.png'});
+    img.addEventListener('error', function(){
+      host.classList.add('mascot-fallback');
+      img.remove();
+    });
+    host.appendChild(img);
+  },
+  bubble: function(container, content, opts){
+    opts = opts || {};
+    var wrap = el('div', {class:'mascot-row'});
+    var avatar = el('span', {class:'mascot-avatar'});
+    var img = el('img', {alt:''});
+    img.src = 'assets/lumi.png';
+    img.addEventListener('error', function(){
+      avatar.classList.add('mascot-fallback');
+      img.remove();
+    });
+    avatar.appendChild(img);
+    var bubble = el('div', {class:'mascot-bubble' + (opts.tone?(' tone-'+opts.tone):'')}, content);
+    wrap.appendChild(avatar);
+    wrap.appendChild(bubble);
+    container.appendChild(wrap);
+    return wrap;
+  }
+};
+
+/* ============================================================
+   5) FX — 최소 게임필(리듀스모션 지원, 라이브러리 금지)
+   ============================================================ */
+var FX = {
+  get reducedMotion(){
+    try{ return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){ return false; }
+  },
+  easeOutCubic: function(t){ return 1 - Math.pow(1-t, 3); },
+  tween: function(opts){
+    var duration = FX.reducedMotion ? 1 : (opts.duration || 300);
+    var start = null;
+    var easing = opts.easing || FX.easeOutCubic;
+    function frame(ts){
+      if(start === null) start = ts;
+      var t = Math.min(1, (ts-start)/duration);
+      opts.onUpdate(easing(t));
+      if(t < 1) requestAnimationFrame(frame);
+      else if(opts.onDone) opts.onDone();
+    }
+    requestAnimationFrame(frame);
+  },
+  pop: function(node){
+    if(!node) return;
+    node.classList.remove('fx-pop'); void node.offsetWidth;
+    node.classList.add('fx-pop');
+  },
+  confetti: function(container){
+    if(FX.reducedMotion || !container) return;
+    var colors = ['#ff4d8b','#1a3a3a','#b8a4ed','#ffb084','#e8b94a','#2ea043'];
+    var n = 16;
+    for(var i=0;i<n;i++){
+      (function(i){
+        var piece = el('span', {class:'confetti-piece'});
+        piece.style.background = colors[i % colors.length];
+        piece.style.left = '50%';
+        piece.style.top = '50%';
+        container.style.position = container.style.position || 'relative';
+        container.appendChild(piece);
+        var angle = Math.random()*Math.PI*2;
+        var dist = 36 + Math.random()*60;
+        var dx = Math.cos(angle)*dist, dy = Math.sin(angle)*dist - 16;
+        FX.tween({
+          duration: 450 + Math.random()*200,
+          easing: FX.easeOutCubic,
+          onUpdate: function(t){
+            piece.style.transform = 'translate('+(dx*t)+'px,'+(dy*t)+'px) rotate('+(t*260)+'deg)';
+            piece.style.opacity = String(1-t);
+          },
+          onDone: function(){ piece.remove(); }
+        });
+      })(i);
+    }
+  }
+};
+
+/* ============================================================
+   6) COMPONENTS — 소형 재사용 컴포넌트
+   ============================================================ */
+var Components = {
+  ThoughtBox: function(opts){
+    var st = STATE.screen(opts.screenId);
+    var wrap = el('div', {class:'thought-box'});
+    var idAttr = 'tb-' + opts.screenId + '-' + opts.key;
+    wrap.appendChild(el('label', {class:'thought-label', 'for':idAttr}, opts.labelText || '생각칸'));
+    var ta = el('textarea', {id:idAttr, class:'thought-input', placeholder: opts.placeholder || ''});
+    ta.value = st[opts.key] || '';
+    ta.addEventListener('input', function(){
+      st[opts.key] = ta.value;
+      STATE.save();
+      if(opts.onChange) opts.onChange(ta.value.trim().length > 0);
+      refreshNav();
+    });
+    wrap.appendChild(ta);
+    return wrap;
+  },
+  SummaryCard: function(opts){
+    var cls = 'card card-' + (opts.color || 'cream');
+    return el('div', {class:cls}, [
+      opts.title ? el('div', {class:'card-title'}, opts.title) : null,
+      el('div', {class:'card-body'}, opts.body)
+    ]);
+  },
+  CheckRow: function(opts){
+    var row = el('label', {class:'check-row'});
+    var cb = el('input', {type:'checkbox'});
+    cb.checked = !!opts.checked;
+    cb.addEventListener('change', function(){ opts.onChange(cb.checked); });
+    row.appendChild(cb);
+    row.appendChild(el('span', {}, opts.label));
+    return row;
+  }
+};
+
+/* 점수 select(긍정 +1~+3 / 부정 -1~-3 등 지정 값 목록) */
+function buildScoreSelect(values, value, ariaLabel, onChange){
+  var sel = el('select', {'aria-label': ariaLabel});
+  sel.appendChild(el('option', {value:''}, '점수 선택'));
+  values.forEach(function(v){ sel.appendChild(el('option', {value:String(v)}, signed(v))); });
+  sel.value = (value===''||value==null) ? '' : String(value);
+  sel.addEventListener('change', function(){ onChange(sel.value===''?'':parseInt(sel.value,10)); });
+  return sel;
+}
+/* 임계값 select(정수 -5~+5) */
+function buildThresholdSelect(value, ariaLabel, onChange, id){
+  var sel = el('select', {'aria-label': ariaLabel});
+  if(id) sel.id = id;
+  sel.appendChild(el('option', {value:''}, '선택'));
+  for(var v=-5; v<=5; v++){ sel.appendChild(el('option', {value:String(v)}, signed(v))); }
+  sel.value = (value===''||value==null) ? '' : String(value);
+  sel.addEventListener('change', function(){ onChange(sel.value===''?'':parseInt(sel.value,10)); });
+  return sel;
+}
+/* 판정 select(긍정/중립/부정, M6) */
+function buildVerdictSelect(value, ariaLabel, onChange){
+  var sel = el('select', {'aria-label': ariaLabel});
+  sel.appendChild(el('option', {value:''}, '선택'));
+  ['긍정','중립','부정'].forEach(function(v){ sel.appendChild(el('option', {value:v}, v)); });
+  sel.value = value || '';
+  sel.addEventListener('change', function(){ onChange(sel.value); });
+  return sel;
+}
+
+/* ============================================================
+   7) 데모 채점 로직 — window.__MAKER_DEMO__ 를 유일 원천으로 사용
+   ============================================================ */
+function demoCountOccurrences(text, word){
+  if(!word) return 0;
+  return text.split(word).length - 1;
+}
+function demoScore(text){
+  var D = window.__MAKER_DEMO__;
+  var total = 0, found = [];
+  for(var w in D.dict){
+    if(!Object.prototype.hasOwnProperty.call(D.dict, w)) continue;
+    var s = D.dict[w];
+    var c = demoCountOccurrences(text, w);
+    if(c > 0){ total += c*s; found.push({word:w, score:s, count:c}); }
+  }
+  return {total:total, found:found};
+}
+function demoVerdictClass(total){
+  var D = window.__MAKER_DEMO__;
+  if(total >= D.posT) return 'v-pos';
+  if(total <= D.negT) return 'v-neg';
+  return 'v-neu';
+}
+function demoVerdictLabel(total){
+  var D = window.__MAKER_DEMO__;
+  if(total >= D.posT) return '긍정 😊';
+  if(total <= D.negT) return '부정 😞';
+  return '중립 😐';
+}
+
+/* ============================================================
+   8) §5 폴백 자동 조립 프롬프트 — verify_maker.py assemble()과 동일 알고리즘
+   ============================================================ */
+function joinWordScores(rows){
+  return rows.filter(function(r){
+    return (r.word||'').trim() !== '' && typeof r.score === 'number' && !isNaN(r.score);
+  }).map(function(r){
+    return r.word.trim() + ':' + signed(r.score);
+  }).join(' / ');
+}
+function assembleFallback(posRows, negRows, posT, negT){
+  var posS = joinWordScores(posRows);
+  var negS = joinWordScores(negRows);
+  return (
+    '리뷰 감성 분석기를 HTML/CSS/JavaScript가 들어 있는 단일 HTML 파일 하나로 만들어 줘.\n' +
+    '외부 라이브러리와 인터넷 연결 없이 동작해야 해.\n\n' +
+    '내 설계:\n' +
+    '1) 감성 사전 — 긍정: ' + posS + ' / 부정: ' + negS + '\n' +
+    '2) 계산 — 리뷰 총점은 사전 단어가 나올 때마다(같은 단어가 여러 번 나오면 나온 횟수만큼) 그 점수를 더한 값\n' +
+    '3) 판정 — 총점이 ' + signed(posT) + ' 이상이면 긍정, ' + signed(negT) + ' 이하면 부정, 그 사이는 중립\n\n' +
+    '화면: 리뷰 입력창 + [판정] 버튼 + 결과 영역.\n' +
+    '결과에는 총점과 판정, 그리고 "판정 이유"로 리뷰에서 발견된 사전 단어와 각 점수를 보여줘.\n' +
+    '여러 리뷰를 한꺼번에 분석하는 기능도 넣어 줘: 한 줄에 리뷰 1개씩 붙여넣는 큰 입력창,\n' +
+    '[모두 판정] 버튼, 각 리뷰의 총점·판정 결과 표, 긍정·중립·부정 개수 막대 차트.\n' +
+    '차트는 외부 라이브러리 없이 canvas나 div로 직접 그려 줘.\n' +
+    '고등학생이 쓰기 좋은 깔끔하고 밝은 디자인으로 부탁해.'
+  );
+}
+
+/* ============================================================
+   9) §4 코치 Gem 지침 전문 (그대로 수록 — [기본문안])
+   ============================================================ */
+var COACH_PROMPT = [
+'당신은 고등학교 1학년 학생이 \'리뷰 감성 분석기\' 웹 앱을 만드는 것을 돕는 「제작 코치」입니다.',
+'',
+'[역할]',
+'- 학생이 스스로 설계를 결정하도록 질문으로 이끕니다. 설계를 대신 정하지 않습니다.',
+'- 친근한 존댓말로, 한 번에 질문을 하나만 합니다. 답이 막히면 예시를 딱 하나 보여주고 다시 학생이 정하게 합니다.',
+'  (단, 감성 사전 단계에서는 단어 여러 개를 한 번에 정하게 해도 좋습니다.)',
+'- 수업과 관계없는 주제로 벗어나면 부드럽게 제작으로 되돌립니다.',
+'',
+'[반드시, 순서대로 이끌어낼 3가지 설계]',
+'1. 감성 사전: 긍정 단어와 부정 단어를 각각 6개 이상, 단어마다 점수(+1~+3, -1~-3)를 학생이 정하게 합니다.',
+'   ("\'맛있다\'는 몇 점을 주고 싶나요? \'최악\'은요?" 처럼 구체적으로 묻고, 익숙해지면',
+'    "긍정 단어 6개와 점수를 한꺼번에 정해 볼까요?"처럼 묶어서 진행해 시간을 아낍니다.',
+'    활용형 때문에 \'맛있다\' 대신 \'맛있\'처럼 줄기만 쓰면 더 잘 잡힌다는 것을 알려줍니다.)',
+'2. 계산 방법: 리뷰의 총점은 사전 단어가 나올 때마다(같은 단어가 여러 번 나오면 나온 횟수만큼)',
+'   그 점수를 더한 값임을 학생이 자기 입(글)으로 말하게 합니다.',
+'3. 판정 기준: 총점이 몇 점 이상이면 긍정, 몇 점 이하면 부정, 그 사이는 중립인지 학생이 정하게 합니다.',
+'   (긍정 기준과 부정 기준의 차이가 2 이상이 되도록 안내합니다 — 그래야 중립이 나올 수 있는',
+'    점수가 최소 1개 생깁니다. 예: 긍정 2점 이상·부정 0점 이하면 1점이 중립.)',
+'',
+'[3가지가 모두 정해지면]',
+'학생의 설계를 그대로 반영한 「최종 제작 프롬프트」를 코드 블록 안에 정리해 줍니다.',
+'최종 제작 프롬프트에는 반드시 다음을 포함합니다:',
+'- HTML/CSS/JavaScript를 담은 단일 HTML 파일 하나로 만들 것 (외부 라이브러리·인터넷 연결 없이 동작)',
+'- 화면 구성: 리뷰 입력창, [판정] 버튼, 결과 영역',
+'- 결과 영역에는 총점·판정(긍정/부정/중립)과 함께 "판정 이유"로',
+'  리뷰에서 발견된 사전 단어와 각 점수를 반드시 보여줄 것',
+'- 여러 리뷰를 한꺼번에 분석하는 기능도 넣을 것: 한 줄에 리뷰 1개씩 붙여넣는 큰 입력창,',
+'  [모두 판정] 버튼, 각 리뷰의 총점·판정을 보여주는 결과 표,',
+'  그리고 긍정·중립·부정 개수를 나타내는 막대 차트',
+'  (차트는 외부 라이브러리 없이 canvas나 div 막대로 직접 그릴 것)',
+'- 학생이 정한 감성 사전·계산 방법(단어가 나온 횟수만큼 점수를 더함)·판정 기준을 숫자 그대로 반영할 것',
+'- 고등학생이 쓰기 좋은 깔끔하고 밝은 디자인',
+'',
+'[학생이 최종 제작 프롬프트를 넣으며 코드를 요청하면]',
+'설계 그대로의 완전한 단일 HTML 코드를 하나의 코드 블록으로 제공합니다.',
+'코드가 길어 끊기면 "이어서 계속"이라는 요청에 이어서 출력합니다.'
+].join('\n');
+
+/* ============================================================
+   10) SCREENS — 화면 정의(빌더)
+   ============================================================ */
+function buildM1(){
+  return {
+    steps: [
+      { /* step1: 목표 선언 */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, 'M1 · 약 3분'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'M1. 오늘 만드는 것'));
+          MASCOT.bubble(s, mdText('리뷰를 넣으면 긍정·부정을 판정하는 **감성 분석기**를, 오늘 내가 직접 만든다.'));
+          root.appendChild(s);
+        }
+      },
+      { /* step2: 내장 미니 데모 — 완성 모습을 먼저 만진다(구체→추상) */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, 'M1 · 약 3분'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'M1. 오늘 만드는 것 — 먼저 만져 보기'));
+          s.appendChild(el('div', {class:'screen-prompt'}, '완성된 모습을 먼저 만져 볼까요? 아래 데모에 리뷰를 적고 [판정]을 눌러 보세요.'));
+
+          var box = el('div', {class:'demo-box'});
+          var presetTexts = ['정말 맛있다 최고', '양은 좋다 근데 서비스는 별로', '실망 그 자체 최악'];
+          var presetRow = el('div', {class:'preset-row'});
+          box.appendChild(presetRow);
+
+          var inputRow = el('div', {class:'demo-input-row'});
+          var input = el('input', {type:'text', 'aria-label':'데모 리뷰 입력', placeholder:'예: 정말 맛있다 최고'});
+          var judgeBtn = el('button', {type:'button', class:'btn btn-primary'}, '판정');
+          inputRow.appendChild(input);
+          inputRow.appendChild(judgeBtn);
+          box.appendChild(inputRow);
+
+          var resultBox = el('div', {class:'demo-result', 'aria-live':'polite'});
+          box.appendChild(resultBox);
+
+          function runJudge(){
+            var text = input.value;
+            if(!text.trim()){ resultBox.textContent = ''; return; }
+            var r = demoScore(text);
+            resultBox.textContent = '';
+            resultBox.appendChild(el('div', {class:'demo-total'}, '총점 ' + signed(r.total) + '점'));
+            resultBox.appendChild(el('div', {class:'demo-verdict ' + demoVerdictClass(r.total)}, demoVerdictLabel(r.total)));
+            resultBox.appendChild(el('div', {class:'muted'}, '이유 (발견된 단어)'));
+            if(r.found.length){
+              var ul = el('ul', {class:'found-list'});
+              r.found.forEach(function(f){
+                ul.appendChild(el('li', {}, f.word + ' ' + signed(f.score) + '점 × ' + f.count + '회 = ' + signed(f.score*f.count) + '점'));
+              });
+              resultBox.appendChild(ul);
+            } else {
+              resultBox.appendChild(el('p', {class:'muted', style:{margin:'2px 0 0'}}, '사전에 있는 단어를 찾지 못했어요 (0점 → 중립).'));
+            }
+            FX.pop(resultBox);
+          }
+          judgeBtn.addEventListener('click', runJudge);
+          input.addEventListener('keydown', function(e){
+            if(e.isComposing || e.keyCode===229) return;
+            if(e.key==='Enter'){ e.preventDefault(); runJudge(); }
+          });
+          presetTexts.forEach(function(t){
+            var b = el('button', {type:'button', class:'btn btn-secondary btn-sm'}, t);
+            b.addEventListener('click', function(){
+              input.value = t;
+              resultBox.textContent = '';
+              input.focus();
+            });
+            presetRow.appendChild(b);
+          });
+
+          box.appendChild(el('p', {class:'muted', style:{marginTop:'8px', marginBottom:'0'}}, '이 데모의 사전은 총 6개(긍정 3 + 부정 3)뿐 — 여러분은 긍정·부정 각 6개 이상으로 더 똑똑하게 만들 수 있어요.'));
+          s.appendChild(box);
+          root.appendChild(s);
+        }
+      },
+      { /* step3: 원리 한 줄 */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, 'M1 · 약 3분'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'M1. 오늘 만드는 것 — 원리 한 줄'));
+          s.appendChild(el('div', {class:'screen-prompt'}, mdText(
+            "어떻게 판정했을까? **단어를 숫자로 바꾸고**(오전 '텍스트 데이터 처리'에서 한 것), **나온 횟수만큼 더하고**(단어 세기), **기준과 비교**(이어말하기 게임의 '기준 이상이면 성공') — 오전에 만진 그 수학입니다."
+          )));
+          root.appendChild(s);
+        }
+      }
+    ]
+  };
+}
+
+function buildM2(){
+  return {
+    steps: [
+      { /* step1: 개념 */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, 'M2 · 약 8분'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'M2. 나만의 제작 코치 만들기 — 지침이란?'));
+          s.appendChild(el('div', {class:'screen-prompt'}, mdText(
+            "AI에게 **지침(Instructions)**을 주면 역할이 바뀐다. 우리는 Gemini에게 '제작 코치' 역할을 준다."
+          )));
+          root.appendChild(s);
+        }
+      },
+      { /* step2: 절차 카드 체크박스 4개(전부 체크해야 다음) */
+        mount: function(root){
+          var st = STATE.screen('M2');
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, 'M2 · 약 8분'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'M2. 나만의 제작 코치 만들기 — 절차'));
+
+          var list = el('div', {class:'screen-block'});
+          function makeCheck(i, labelNode){
+            var row = el('label', {class:'check-row', style:{alignItems:'flex-start'}});
+            var cb = el('input', {type:'checkbox'});
+            cb.checked = !!st.checks[i];
+            cb.addEventListener('change', function(){
+              st.checks[i] = cb.checked;
+              STATE.save();
+              refreshNav();
+            });
+            row.appendChild(cb);
+            row.appendChild(el('span', {}, labelNode));
+            return row;
+          }
+
+          list.appendChild(makeCheck(0, '1. Gemini 접속·로그인 (개인 Google 계정)'));
+
+          var item2 = el('div', {style:{margin:'4px 0'}});
+          item2.appendChild(makeCheck(1, '2. Gem 만들기 열기'));
+          var linkRow = el('div', {style:{margin:'4px 0 4px 32px'}});
+          linkRow.appendChild(el('a', {class:'btn btn-secondary btn-sm', href:'https://gemini.google.com/gems/create', target:'_blank', rel:'noopener', 'aria-label':'Gem 만들기 열기 (새 창 열림)'}, 'Gem 만들기 열기 ↗'));
+          linkRow.appendChild(el('span', {class:'muted', style:{marginLeft:'8px'}}, '(새 창)'));
+          item2.appendChild(linkRow);
+          list.appendChild(item2);
+
+          list.appendChild(makeCheck(2, el('span', {}, ['3. 이름: ', el('code', {}, '제작 코치'), ' / ', el('strong', {}, '지침(Instructions) 칸에 아래 프롬프트 붙여넣기')])));
+          list.appendChild(makeCheck(3, '4. 저장 → 내 Gem과 대화 시작'));
+
+          s.appendChild(list);
+          root.appendChild(s);
+        },
+        isComplete: function(){ return STATE.screen('M2').checks.every(function(c){ return c; }); }
+      },
+      { /* step3: 코치 프롬프트 전문 + 복사 */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, 'M2 · 약 8분'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'M2. 나만의 제작 코치 만들기 — 코치 프롬프트'));
+          s.appendChild(el('p', {}, '아래 전문을 복사해서 Gem의 지침(Instructions) 칸에 붙여넣으세요.'));
+
+          var block = el('div', {class:'prompt-block'});
+          var head = el('div', {class:'prompt-head'});
+          head.appendChild(el('span', {}, '코치 프롬프트'));
+          var copyBtn = el('button', {type:'button', class:'btn btn-secondary btn-sm'}, '복사');
+          copyBtn.addEventListener('click', function(){ copyText(COACH_PROMPT, '코치 프롬프트를 복사했어요.'); });
+          head.appendChild(copyBtn);
+          block.appendChild(head);
+          block.appendChild(el('pre', {class:'prompt-pre', tabindex:'0', 'aria-label':'코치 프롬프트 내용 (스크롤 가능)'}, COACH_PROMPT));
+          s.appendChild(block);
+
+          var banner1 = el('div', {class:'banner'});
+          banner1.appendChild(el('span', {class:'banner-icon', 'aria-hidden':'true'}, '⚠'));
+          banner1.appendChild(el('span', {}, mdText('**대화 탭을 닫지 마세요**(청소년 계정은 대화가 저장되지 않을 수 있어요)')));
+          s.appendChild(banner1);
+
+          var banner2 = el('div', {class:'banner'});
+          banner2.appendChild(el('span', {class:'banner-icon', 'aria-hidden':'true'}, '⚠'));
+          banner2.appendChild(el('span', {}, '로그인이 안 되면 짝과 한 화면으로 함께 해요.'));
+          s.appendChild(banner2);
+
+          root.appendChild(s);
+        }
+      }
+    ]
+  };
+}
+
+function buildWordTable(opts){
+  var wrap = el('div', {class:'table-wrap'});
+  var table = el('table', {class:'word-table'});
+  table.appendChild(el('caption', {class:'sr-only'}, opts.caption));
+  var thead = el('thead');
+  var htr = el('tr');
+  htr.appendChild(el('th', {scope:'col'}, '단어'));
+  htr.appendChild(el('th', {scope:'col'}, '점수'));
+  thead.appendChild(htr);
+  table.appendChild(thead);
+  var tbody = el('tbody');
+  opts.rows.forEach(function(row, idx){
+    var tr = el('tr');
+    var wordTd = el('td');
+    var wordInput = el('input', {type:'text', 'aria-label': opts.ariaWord + ' ' + (idx+1) + '행'});
+    wordInput.value = row.word || '';
+    wordInput.addEventListener('input', function(){
+      row.word = wordInput.value;
+      STATE.save();
+      refreshNav();
+    });
+    wordTd.appendChild(wordInput);
+    tr.appendChild(wordTd);
+    var scoreTd = el('td');
+    var scoreSelect = buildScoreSelect(opts.values, row.score, opts.ariaScore + ' ' + (idx+1) + '행', function(v){
+      row.score = v;
+      STATE.save();
+      refreshNav();
+    });
+    scoreTd.appendChild(scoreSelect);
+    tr.appendChild(scoreTd);
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  return wrap;
+}
+
+function buildM3(){
+  return {
+    steps: [
+      { /* step1: 안내 */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, 'M3 · 약 11분'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'M3. 코치와 대화: 내 설계 정하기 — 안내'));
+          s.appendChild(el('div', {class:'screen-prompt'}, mdText(
+            '코치가 질문으로 3가지를 물어온다. **대화에서 정한 것을 아래 기록란에 그대로 옮겨 적는다**(대화가 사라져도 설계는 남는다).'
+          )));
+          root.appendChild(s);
+        }
+      },
+      { /* step2: 내 명세 기록란(게이팅) */
+        mount: function(root){
+          var st = STATE.screen('M3');
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, 'M3 · 약 11분'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'M3. 코치와 대화: 내 설계 정하기 — 내 명세 기록'));
+          s.appendChild(el('div', {class:'screen-prompt'}, '대화에서 정한 감성 사전과 판정 기준을 아래에 옮겨 적으세요. 긍정·부정 각각 6행 이상 채워야 해요.'));
+
+          s.appendChild(el('h3', {}, '긍정 단어(6개 이상)'));
+          s.appendChild(buildWordTable({rows:st.pos, values:[1,2,3], caption:'긍정 단어와 점수 입력표', ariaWord:'긍정 단어', ariaScore:'긍정 점수'}));
+
+          s.appendChild(el('h3', {}, '부정 단어(6개 이상)'));
+          s.appendChild(buildWordTable({rows:st.neg, values:[-1,-2,-3], caption:'부정 단어와 점수 입력표', ariaWord:'부정 단어', ariaScore:'부정 점수'}));
+
+          s.appendChild(el('p', {class:'muted'}, '여유 행 2개는 나중에(M6 대량 시험 뒤) 단어를 늘릴 때 쓰세요.'));
+
+          var calcRow = el('label', {class:'check-row', style:{alignItems:'flex-start', marginTop:'12px'}});
+          var calcCb = el('input', {type:'checkbox'});
+          calcCb.checked = !!st.calcCheck;
+          calcCb.addEventListener('change', function(){ st.calcCheck = calcCb.checked; STATE.save(); refreshNav(); });
+          calcRow.appendChild(calcCb);
+          calcRow.appendChild(el('span', {}, mdText('리뷰 총점 = 사전 단어가 **나올 때마다**(같은 단어가 여러 번 나오면 **나온 횟수만큼**) 그 점수를 더한 값')));
+          s.appendChild(calcRow);
+
+          var thWrap = el('div', {class:'screen-block'});
+          thWrap.appendChild(el('h3', {}, '판정 임계값'));
+          thWrap.appendChild(el('p', {class:'muted'}, '긍정 기준 − 부정 기준이 2 이상이 되도록 정해보세요.'));
+          var thRow = el('div', {class:'threshold-row'});
+          var warnBox = el('div', {class:'inline-warn', 'aria-live':'polite', role:'status'});
+          function checkThreshold(){
+            if(st.posT === '' || st.negT === ''){ warnBox.textContent = ''; refreshNav(); return; }
+            var diff = st.posT - st.negT;
+            warnBox.textContent = diff < 2 ? ('긍정 기준 − 부정 기준은 2 이상이어야 해요. (지금 차이: ' + diff + ')') : '';
+            refreshNav();
+          }
+          var posField = el('div', {class:'threshold-field'});
+          posField.appendChild(el('label', {'for':'thresh-pos'}, '긍정 기준 (총점 ≥)'));
+          posField.appendChild(buildThresholdSelect(st.posT, '긍정 기준', function(v){ st.posT = v; STATE.save(); checkThreshold(); }, 'thresh-pos'));
+          thRow.appendChild(posField);
+          var negField = el('div', {class:'threshold-field'});
+          negField.appendChild(el('label', {'for':'thresh-neg'}, '부정 기준 (총점 ≤)'));
+          negField.appendChild(buildThresholdSelect(st.negT, '부정 기준', function(v){ st.negT = v; STATE.save(); checkThreshold(); }, 'thresh-neg'));
+          thRow.appendChild(negField);
+          thWrap.appendChild(thRow);
+          thWrap.appendChild(warnBox);
+          s.appendChild(thWrap);
+          checkThreshold();
+
+          root.appendChild(s);
+        },
+        isComplete: function(){
+          var st = STATE.screen('M3');
+          function filledCount(rows){ return rows.filter(function(r){ return (r.word||'').trim()!=='' && typeof r.score==='number'; }).length; }
+          if(filledCount(st.pos) < window.__MAKER_RULES__.minWords) return false;
+          if(filledCount(st.neg) < window.__MAKER_RULES__.minWords) return false;
+          if(!st.calcCheck) return false;
+          if(st.posT === '' || st.negT === '') return false;
+          return (st.posT - st.negT) >= 2;
+        }
+      },
+      { /* step3: 심화 안내(선택, 게이팅 없음) */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, 'M3 · 약 11분'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'M3. 코치와 대화: 내 설계 정하기 — 더 똑똑하게(선택)'));
+          var d = el('details', {class:'faq-item'});
+          d.appendChild(el('summary', {}, '심화: \'안/않\'이 붙으면 어떻게 될까?'));
+          d.appendChild(el('div', {class:'faq-body'},
+            "'좋' 사전은 '안 좋아'도 긍정으로 셀 수 있어요. 코치에게 '안/않'이 붙으면 점수를 뒤집는 방법을 물어보세요."
+          ));
+          s.appendChild(d);
+          root.appendChild(s);
+        }
+      }
+    ]
+  };
+}
+
+function buildM4(){
+  return {
+    steps: [
+      { /* step1: 코치에게 요청(자체 보고 체크 — 게이팅 없음: 폴백 접근을 막지 않기 위함) */
+        mount: function(root){
+          var st = STATE.screen('M4');
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, 'M4 · 약 5분'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'M4. 최종 제작 프롬프트 — 코치에게 요청'));
+          s.appendChild(el('div', {class:'screen-prompt'}, "코치에게 '이제 최종 제작 프롬프트를 만들어 줘'라고 말하면, 코치가 여러분의 설계를 정리해 준다."));
+          var row = el('label', {class:'check-row'});
+          var cb = el('input', {type:'checkbox'});
+          cb.checked = !!st.gotPrompt;
+          cb.addEventListener('change', function(){ st.gotPrompt = cb.checked; STATE.save(); refreshNav(); });
+          row.appendChild(cb);
+          row.appendChild(el('span', {}, '코치의 최종 프롬프트를 받았어요'));
+          s.appendChild(row);
+          s.appendChild(el('p', {class:'muted'}, '코치와 대화가 막히면, 다음 화면의 예비 버튼을 써도 괜찮아요.'));
+          root.appendChild(s);
+        }
+      },
+      { /* step2: 폴백 — 자동 조립 프롬프트(§5, verify_maker.py assemble()과 동일 알고리즘) */
+        mount: function(root){
+          var st3 = STATE.screen('M3');
+          var st4 = STATE.screen('M4');
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, 'M4 · 약 5분'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'M4. 최종 제작 프롬프트 — 예비 자동 조립'));
+          s.appendChild(el('p', {class:'muted'}, '코치와 대화가 어려울 때 쓰는 예비 버튼이에요.'));
+
+          var prompt = assembleFallback(st3.pos, st3.neg, st3.posT, st3.negT);
+          var block = el('div', {class:'prompt-block'});
+          var head = el('div', {class:'prompt-head'});
+          head.appendChild(el('span', {}, '자동 조립 프롬프트'));
+          var copyBtn = el('button', {type:'button', class:'btn btn-secondary btn-sm'}, '복사');
+          copyBtn.addEventListener('click', function(){
+            copyText(prompt, '자동 조립 프롬프트를 복사했어요.');
+            st4.gotPrompt = true;
+            STATE.save();
+          });
+          head.appendChild(copyBtn);
+          block.appendChild(head);
+          block.appendChild(el('pre', {class:'prompt-pre', tabindex:'0', 'aria-label':'자동 조립 프롬프트 내용 (스크롤 가능)'}, prompt));
+          s.appendChild(block);
+
+          root.appendChild(s);
+        }
+      },
+      { /* step3: 프롬프트 품질 체크리스트(읽기 확인, 게이팅) */
+        mount: function(root){
+          var st = STATE.screen('M4');
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, 'M4 · 약 5분'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'M4. 최종 제작 프롬프트 — 품질 체크리스트'));
+          s.appendChild(el('p', {}, '프롬프트(또는 받은 결과)에 아래 내용이 모두 있는지 확인하세요.'));
+
+          var items = [
+            '단일 HTML 1파일',
+            '내 사전·계산·임계값 그대로',
+            mdText('판정 **이유**(단어·점수) 표시'),
+            '인터넷 연결 없이 동작',
+            '여러 리뷰 한꺼번에 판정(한 줄에 1개) + 긍정·중립·부정 개수 차트'
+          ];
+          var wrap = el('div', {class:'screen-block'});
+          items.forEach(function(labelNode, i){
+            var row = el('label', {class:'check-row'});
+            var cb = el('input', {type:'checkbox'});
+            cb.checked = !!st.checklist[i];
+            cb.addEventListener('change', function(){ st.checklist[i] = cb.checked; STATE.save(); refreshNav(); });
+            row.appendChild(cb);
+            row.appendChild(el('span', {}, labelNode));
+            wrap.appendChild(row);
+          });
+          s.appendChild(wrap);
+          root.appendChild(s);
+        },
+        isComplete: function(){ return STATE.screen('M4').checklist.every(function(c){ return c; }); }
+      }
+    ]
+  };
+}
+
+function buildM5(){
+  return {
+    steps: [
+      { /* step1: 생성 */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, 'M5 · 약 10분'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'M5. 생성·저장·실행 — 코드 생성'));
+          s.appendChild(el('div', {class:'screen-prompt'}, mdText(
+            '프롬프트를 **내 코치 Gem 대화에 이어서** 붙여넣기(또는 새 채팅). 코드가 나오면 코드 블록 오른쪽 위 복사 버튼.'
+          )));
+          var linkRow = el('div', {style:{margin:'8px 0'}});
+          linkRow.appendChild(el('a', {class:'btn btn-secondary', href:'https://gemini.google.com/app', target:'_blank', rel:'noopener', 'aria-label':'Gemini 열기 (새 창 열림)'}, 'Gemini 열기 ↗'));
+          s.appendChild(linkRow);
+          root.appendChild(s);
+        }
+      },
+      { /* step2: 저장·실행 절차(기기별 분기 탭, 게이팅: 선택 탭의 체크) */
+        mount: function(root){
+          var st = STATE.screen('M5');
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, 'M5 · 약 10분'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'M5. 생성·저장·실행 — 저장하고 실행하기'));
+
+          var tabs = el('div', {class:'seg-toggle', role:'radiogroup', 'aria-label':'내 기기'});
+          var panelHost = el('div', {class:'screen-block', style:{marginTop:'12px'}});
+
+          function renderPanel(){
+            panelHost.innerHTML = '';
+            if(st.deviceTab === 'notebook'){
+              var p1 = el('div', {});
+              p1.appendChild(el('p', {}, [
+                '메모장 열기 → 붙여넣기 → 다른 이름으로 저장 → 파일 이름 ',
+                el('code', {}, '내감성분석기.html'),
+                ', 파일 형식 "모든 파일", 인코딩 UTF-8 → 더블클릭 실행.'
+              ]));
+              var row1 = el('label', {class:'check-row'});
+              var cb1 = el('input', {type:'checkbox'});
+              cb1.checked = !!st.notebookCheck;
+              cb1.addEventListener('change', function(){ st.notebookCheck = cb1.checked; STATE.save(); refreshNav(); });
+              row1.appendChild(cb1);
+              row1.appendChild(el('span', {}, '이 순서대로 저장하고 실행했어요'));
+              p1.appendChild(row1);
+              panelHost.appendChild(p1);
+            } else {
+              var p2 = el('div', {});
+              p2.appendChild(el('p', {}, mdText('Gemini의 **미리보기(Canvas)**로 실행 확인(안 되면 짝의 노트북에서 실행).')));
+              var row2 = el('label', {class:'check-row'});
+              var cb2 = el('input', {type:'checkbox'});
+              cb2.checked = !!st.tabletCheck;
+              cb2.addEventListener('change', function(){ st.tabletCheck = cb2.checked; STATE.save(); refreshNav(); });
+              row2.appendChild(cb2);
+              row2.appendChild(el('span', {}, '미리보기(Canvas)로 실행을 확인했어요'));
+              p2.appendChild(row2);
+              panelHost.appendChild(p2);
+            }
+          }
+          function renderTabs(){
+            tabs.innerHTML = '';
+            [['notebook','노트북'], ['tablet','태블릿']].forEach(function(pair){
+              var b = el('button', {type:'button', class:'seg-btn'+(st.deviceTab===pair[0]?' active':''), role:'radio', 'aria-checked': st.deviceTab===pair[0]?'true':'false'}, pair[1]);
+              b.addEventListener('click', function(){
+                st.deviceTab = pair[0];
+                STATE.save();
+                renderTabs();
+                renderPanel();
+                refreshNav();
+              });
+              b.addEventListener('keydown', function(ev){
+                if(ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') return;
+                ev.preventDefault();
+                var list = tabs.querySelectorAll('[role="radio"]');
+                var idx = Array.prototype.indexOf.call(list, ev.currentTarget);
+                var ni = ev.key === 'ArrowRight' ? (idx + 1) % list.length : (idx - 1 + list.length) % list.length;
+                list[ni].click();
+                var fresh = tabs.querySelectorAll('[role="radio"]');
+                if(fresh[ni]) fresh[ni].focus();
+              });
+              tabs.appendChild(b);
+            });
+          }
+          renderTabs();
+          renderPanel();
+          s.appendChild(tabs);
+          s.appendChild(panelHost);
+          root.appendChild(s);
+        },
+        isComplete: function(){
+          var st = STATE.screen('M5');
+          return st.deviceTab === 'notebook' ? !!st.notebookCheck : !!st.tabletCheck;
+        }
+      },
+      { /* step3: 문제 해결 미니 FAQ 접이식(게이팅 없음) */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, 'M5 · 약 10분'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'M5. 생성·저장·실행 — 문제 해결 FAQ'));
+
+          var faqs = [
+            ['화면이 하얗다', '코드 전체를 복사했는지 확인하세요.'],
+            ['한글이 깨진다', '인코딩 UTF-8로 저장했는지 확인하세요.'],
+            ['코드가 중간에 끊겼다', '"이어서 계속"이라고 말해 보세요.']
+          ];
+          faqs.forEach(function(f){
+            var d = el('details', {class:'faq-item'});
+            d.appendChild(el('summary', {}, f[0]));
+            d.appendChild(el('div', {class:'faq-body'}, f[1]));
+            s.appendChild(d);
+          });
+          root.appendChild(s);
+        }
+      }
+    ]
+  };
+}
+
+function buildM6(){
+  return {
+    steps: [
+      { /* step1: 테스트 설계 — 기록 표 3행(게이팅) */
+        mount: function(root){
+          var st = STATE.screen('M6');
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, 'M6 · 약 10분'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'M6. 내 분석기 시험하기 — 테스트 설계'));
+          s.appendChild(el('div', {class:'screen-prompt'}, mdText('리뷰 3개를 **직접 지어** 내 분석기에 넣는다: ①긍정이 나와야 할 리뷰 ②부정이 나와야 할 리뷰 ③애매한 리뷰.')));
+
+          var wrap = el('div', {class:'table-wrap'});
+          var table = el('table', {class:'test-table'});
+          table.appendChild(el('caption', {class:'sr-only'}, '테스트 리뷰 3개와 예상·실제 판정 비교표'));
+          var thead = el('thead');
+          var htr = el('tr');
+          ['구분','내 리뷰','예상 판정','실제 판정','일치'].forEach(function(h){ htr.appendChild(el('th', {scope:'col'}, h)); });
+          thead.appendChild(htr);
+          table.appendChild(thead);
+          var tbody = el('tbody');
+          var tags = ['① 긍정 리뷰', '② 부정 리뷰', '③ 애매한 리뷰'];
+          st.rows.forEach(function(row, idx){
+            var tr = el('tr');
+            tr.appendChild(el('td', {class:'row-tag'}, tags[idx]));
+            var textTd = el('td');
+            var textInput = el('input', {type:'text', 'aria-label': (idx+1) + '행 내 리뷰'});
+            textInput.value = row.text || '';
+            var matchBadge = el('span', {class:'match-badge', 'aria-live':'polite'});
+            function updateMatch(){
+              matchBadge.className = 'match-badge';
+              matchBadge.textContent = '';
+              if(row.expect && row.actual){
+                if(row.expect === row.actual){ matchBadge.classList.add('ok'); matchBadge.textContent = '일치'; }
+                else { matchBadge.classList.add('bad'); matchBadge.textContent = '불일치'; }
+              }
+            }
+            textInput.addEventListener('input', function(){ row.text = textInput.value; STATE.save(); refreshNav(); });
+            textTd.appendChild(textInput);
+            tr.appendChild(textTd);
+            var expectTd = el('td');
+            expectTd.appendChild(buildVerdictSelect(row.expect, (idx+1) + '행 예상 판정', function(v){ row.expect = v; STATE.save(); updateMatch(); refreshNav(); }));
+            tr.appendChild(expectTd);
+            var actualTd = el('td');
+            actualTd.appendChild(buildVerdictSelect(row.actual, (idx+1) + '행 실제 판정', function(v){ row.actual = v; STATE.save(); updateMatch(); refreshNav(); }));
+            tr.appendChild(actualTd);
+            var matchTd = el('td');
+            matchTd.appendChild(matchBadge);
+            tr.appendChild(matchTd);
+            tbody.appendChild(tr);
+            updateMatch();
+          });
+          table.appendChild(tbody);
+          wrap.appendChild(table);
+          s.appendChild(wrap);
+          root.appendChild(s);
+        },
+        isComplete: function(){
+          return STATE.screen('M6').rows.every(function(r){ return (r.text||'').trim()!=='' && r.expect && r.actual; });
+        }
+      },
+      { /* step2 [신설]: 대량 시험 — 예시 리뷰 100개(게이팅: 관찰 기록 3칸) */
+        mount: function(root){
+          var st = STATE.screen('M6');
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, 'M6 · 약 10분'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'M6. 내 분석기 시험하기 — 대량 시험'));
+          s.appendChild(el('div', {class:'screen-prompt'}, mdText('이번엔 준비된 **예시 리뷰 100개**(쇼핑 리뷰)로 대량 시험을 해요.')));
+
+          var reviews = window.__MAKER_REVIEWS__;
+          var block = el('div', {class:'prompt-block'});
+          var head = el('div', {class:'prompt-head'});
+          head.appendChild(el('span', {}, '예시 리뷰 100개'));
+          var copyBtn = el('button', {type:'button', class:'btn btn-secondary btn-sm', 'aria-label':'예시 리뷰 100개 복사'}, '복사');
+          copyBtn.addEventListener('click', function(){
+            copyText(window.__MAKER_REVIEWS__.join('\n'), '예시 리뷰 100개를 복사했어요.');
+          });
+          head.appendChild(copyBtn);
+          block.appendChild(head);
+
+          var previewList = el('ul', {class:'muted', style:{margin:'0 0 8px', paddingLeft:'18px'}});
+          reviews.slice(0, 3).forEach(function(r){ previewList.appendChild(el('li', {}, r)); });
+          block.appendChild(previewList);
+
+          var details = el('details', {class:'faq-item'});
+          details.appendChild(el('summary', {}, '100개 전체 보기'));
+          var detailBody = el('div', {class:'faq-body'});
+          detailBody.appendChild(el('pre', {class:'prompt-pre', tabindex:'0', 'aria-label':'예시 리뷰 100개 전체 (스크롤 가능)'}, window.__MAKER_REVIEWS__.join('\n')));
+          details.appendChild(detailBody);
+          block.appendChild(details);
+          s.appendChild(block);
+
+          var ol = el('ol', {style:{margin:'8px 0', paddingLeft:'20px'}});
+          ["내 분석기의 '여러 리뷰 넣는 큰 입력창'에 붙여넣기", '[모두 판정] 버튼 누르기', '차트 확인하기'].forEach(function(t){ ol.appendChild(el('li', {}, t)); });
+          s.appendChild(ol);
+
+          s.appendChild(el('p', {}, mdText('차트의 세 막대 = 긍정·중립·부정 리뷰가 **몇 개인지 센 것** — 오전 \'텍스트 데이터 처리\'에서 단어 개수를 세던 바로 그 방법이에요.')));
+
+          s.appendChild(el('p', {class:'muted'}, mdText("내 분석기에 일괄 판정·차트가 없다면? 코치에게 **'여러 리뷰를 한꺼번에 넣는 큰 입력창과 개수 차트를 추가해 줘'**라고 요청한 뒤 다시 시험해 보세요. 그래도 어려우면 짝의 분석기 결과로 기록해도 좋아요.")));
+
+          var obsWrap = el('div', {class:'screen-block'});
+          obsWrap.appendChild(el('h3', {}, '관찰 기록 — 내 차트가 보여 준 개수'));
+          var obsRow = el('div', {class:'threshold-row'});
+          var warnBox = el('div', {class:'inline-warn', 'aria-live':'polite', role:'status'});
+
+          function checkSum(){
+            var p = st.batch.pos, n = st.batch.neu, g = st.batch.neg;
+            var newText = '';
+            if(p !== '' && n !== '' && g !== ''){
+              var sum = (parseInt(p, 10) || 0) + (parseInt(n, 10) || 0) + (parseInt(g, 10) || 0);
+              if(sum !== 100) newText = '세 수의 합이 100이 아니에요. 분석기가 100줄을 다 읽었는지 확인해 보세요.';
+            }
+            /* aria-live 동일 문자열 재설정 재발화 방지 — 변할 때만 기록 */
+            if(warnBox.textContent !== newText) warnBox.textContent = newText;
+          }
+          function makeField(labelText, key, idSuffix){
+            var field = el('div', {class:'threshold-field'});
+            var idAttr = 'm6batch-' + idSuffix;
+            field.appendChild(el('label', {'for':idAttr}, labelText));
+            var input = el('input', {type:'number', min:'0', max:'100', id:idAttr, 'aria-label':labelText});
+            input.value = st.batch[key];
+            input.addEventListener('input', function(){
+              st.batch[key] = input.value;
+              STATE.save();
+              refreshNav();
+              checkSum();
+            });
+            field.appendChild(input);
+            return field;
+          }
+          obsRow.appendChild(makeField('긍정 개수', 'pos', 'pos'));
+          obsRow.appendChild(makeField('중립 개수', 'neu', 'neu'));
+          obsRow.appendChild(makeField('부정 개수', 'neg', 'neg'));
+          obsWrap.appendChild(obsRow);
+          obsWrap.appendChild(warnBox);
+          s.appendChild(obsWrap);
+          checkSum();
+
+          s.appendChild(el('p', {}, mdText("중립이 많이 나왔나요? 중립으로 판정된 리뷰를 결과 표에서 몇 개 찾아 읽어 보세요 — 내 사전에 **없는 감성 표현**(예: '빠르', '늦', '불친절', '엉망') 때문인지, 단어는 있는데 **총점이 기준을 못 넘어서**인지 보일 거예요. (중립이 적게 나왔다면 흔한 감성어를 잘 고른 거예요 — 그래도 놓친 리뷰가 있는지 표에서 확인해 보세요.)")));
+
+          root.appendChild(s);
+        },
+        isComplete: function(){
+          var b = STATE.screen('M6').batch;
+          function filled(v){ return String(v).trim() !== '' && !isNaN(parseInt(v, 10)); }
+          return filled(b.pos) && filled(b.neu) && filled(b.neg);
+        }
+      },
+      { /* step3 [개편: 기존 step2 확장]: 원인 찾기와 사전 키우기(게이팅 없음) */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, 'M6 · 약 10분'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'M6. 내 분석기 시험하기 — 원인 찾기와 사전 키우기'));
+          s.appendChild(el('p', {}, '불일치가 있으면 — 원인 찾기 안내:'));
+          var ul = el('ul', {style:{margin:'6px 0', paddingLeft:'18px'}});
+          ['사전에 없는 단어였나?', '점수가 약했나?', '임계값이 너무 높았나?'].forEach(function(q){ ul.appendChild(el('li', {}, q)); });
+          ul.appendChild(el('li', {}, mdText('**긍정·부정 기준 사이 간격이 좁아 중립이 안 나오나?**')));
+          ul.appendChild(el('li', {}, mdText('**100개 중 중립이 너무 많다 → 사전 단어 수를 늘려 보자.**')));
+          s.appendChild(ul);
+          s.appendChild(el('p', {}, mdText('→ **코치에게 수정 프롬프트** 예시:')));
+          s.appendChild(el('div', {class:'example-quote'}, "'양이 적다'도 부정으로 잡히게 사전에 추가해서 코드를 다시 만들어 줘."));
+          s.appendChild(el('div', {class:'example-quote'}, "쇼핑 리뷰를 보니 배송 얘기가 많아. '빠르'·'친절'은 +2, '늦'·'불친절'은 −2로 사전에 추가해서 다시 만들어 줘."));
+          s.appendChild(el('p', {class:'muted'}, '추가한 단어는 M3 기록란의 여유 행에도 옮겨 적어 두세요(위 진행 칩으로 M3에 다녀올 수 있어요).'));
+          root.appendChild(s);
+        }
+      },
+      { /* step4 [기존 step3]: 한 줄 회고(게이팅 없음) */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, 'M6 · 약 10분'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'M6. 내 분석기 시험하기 — 한 줄 회고'));
+          s.appendChild(el('div', {class:'screen-prompt'}, '내 분석기가 틀린 이유를 하나 찾았다면, 그게 오늘 가장 수학적인 발견이에요.'));
+          root.appendChild(s);
+        }
+      }
+    ]
+  };
+}
+
+function buildM7(){
+  return {
+    steps: [
+      { /* step1: 회수 카드 */
+        mount: function(root){
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, 'M7 · 약 3분'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'M7. 마무리: 오늘의 연결 — 오늘 배운 것'));
+          s.appendChild(Components.SummaryCard({
+            color:'teal',
+            title:'오늘의 연결',
+            body: mdText(
+              "내가 만든 감성 분석기 = **단어를 숫자로**(텍스트 데이터 처리) + **나온 횟수만큼 더하기**(단어 세기) + **기준선 판정**(게임의 '기준 이상이면 성공'). 이 '더해서 기준과 비교하는' 계산은 논리 연산에서 본 **퍼셉트론(직선으로 나누기)을 숫자로 푼 모습과 닮았어요** — 이런 계산에는 '가중합'이라는 이름이 붙습니다. 우리는 기준선을 **2개** 써서 셋(긍정·중립·부정)으로 나눴죠. 기준 하나로 안 될 때 여러 개를 조합하는 아이디어 — **XOR에서 봤던 그것!**"
+            )
+          }));
+          root.appendChild(s);
+        }
+      },
+      { /* step2: 생각 적기(완료 게이트, 축하+lumi) */
+        mount: function(root){
+          var st = STATE.screen('M7');
+          var s = el('section', {class:'screen'});
+          s.appendChild(el('div', {class:'screen-eyebrow'}, 'M7 · 약 3분'));
+          s.appendChild(el('h2', {class:'screen-title'}, 'M7. 마무리: 오늘의 연결 — 생각 적기'));
+
+          var celebrateHost = el('div', {'aria-live':'polite'});
+          var wasFilled = (st.thought||'').trim().length > 0;
+          function showCelebration(){
+            celebrateHost.innerHTML = '';
+            MASCOT.bubble(celebrateHost, '오늘 나만의 감성 분석기를 완성했어요! 정말 멋져요.', {tone:'cheer'});
+          }
+
+          s.appendChild(Components.ThoughtBox({
+            screenId:'M7', key:'thought',
+            labelText:'내 감성 분석기에서 가장 마음에 드는 설계 하나와, 더 똑똑하게 만들 아이디어 하나를 적어 보세요.',
+            placeholder:'예: 임계값을 2, 0으로 정한 게 마음에 들어요. 다음엔...',
+            onChange:function(isFilled){
+              if(isFilled && !wasFilled){
+                wasFilled = true;
+                showCelebration();
+                FX.confetti(celebrateHost);
+              } else if(!isFilled && wasFilled){
+                wasFilled = false;
+                celebrateHost.innerHTML = '';
+              }
+            }
+          }));
+          s.appendChild(celebrateHost);
+          if(wasFilled){ showCelebration(); }
+          root.appendChild(s);
+        },
+        isComplete: function(){ return (STATE.screen('M7').thought||'').trim().length > 0; }
+      }
+    ]
+  };
+}
+
+var SCREENS = {
+  M1: buildM1(), M2: buildM2(), M3: buildM3(), M4: buildM4(),
+  M5: buildM5(), M6: buildM6(), M7: buildM7()
+};
+
+/* ============================================================
+   11) TEACHER — 교사 패널
+   ============================================================ */
+var TEACHER = {
+  tapCount: 0,
+  tapTimer: null,
+  _trigger: null,
+  init: function(){
+    var titleBtn = document.getElementById('appTitleBtn');
+    titleBtn.addEventListener('click', function(){
+      TEACHER.tapCount++;
+      clearTimeout(TEACHER.tapTimer);
+      TEACHER.tapTimer = setTimeout(function(){ TEACHER.tapCount = 0; }, 2500);
+      if(TEACHER.tapCount >= 5){ TEACHER.tapCount = 0; TEACHER.open(); }
+    });
+    document.addEventListener('keydown', function(e){
+      if(e.altKey && (e.key==='r' || e.key==='R')){ TEACHER.open(); }
+      if(e.key === 'Escape'){ TEACHER.close(); }
+      if(e.key === 'Tab'){ TEACHER.trapTab(e); }
+    });
+    document.getElementById('teacherCloseBtn').addEventListener('click', TEACHER.close);
+    document.getElementById('teacherResetBtn').addEventListener('click', function(){
+      var area = document.getElementById('teacherConfirmArea');
+      area.textContent = '';
+      var box = el('div', {class:'card-hairline', style:{marginTop:'10px'}});
+      box.appendChild(el('p', {style:{margin:'0 0 10px'}}, '정말 초기화할까요? 이 학습지의 진행 상황이 모두 사라집니다.'));
+      var row = el('div', {class:'btn-row'});
+      var yes = el('button', {type:'button', class:'btn btn-primary'}, '예, 초기화');
+      yes.addEventListener('click', function(){
+        STATE.reset();
+        ROUTER.render();
+        TEACHER.close();
+        toast('초기화되었습니다.');
+      });
+      var no = el('button', {type:'button', class:'btn btn-secondary'}, '아니오');
+      no.addEventListener('click', function(){
+        area.textContent = '';
+        document.getElementById('teacherResetBtn').focus({preventScroll:true});
+      });
+      row.appendChild(yes); row.appendChild(no);
+      box.appendChild(row);
+      area.appendChild(box);
+      yes.focus({preventScroll:true});
+    });
+  },
+  open: function(){
+    TEACHER._trigger = document.activeElement;
+    document.getElementById('teacherPanel').classList.add('open');
+    document.getElementById('teacherConfirmArea').textContent = '';
+    var shell = document.querySelector('.app-shell');
+    if(shell) shell.setAttribute('aria-hidden', 'true');
+    var first = document.getElementById('teacherPanel').querySelector(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+    if(first) first.focus({preventScroll:true});
+  },
+  close: function(){
+    var panel = document.getElementById('teacherPanel');
+    if(!panel.classList.contains('open')) return;
+    panel.classList.remove('open');
+    var shell = document.querySelector('.app-shell');
+    if(shell) shell.removeAttribute('aria-hidden');
+    var trigger = TEACHER._trigger || document.getElementById('appTitleBtn');
+    TEACHER._trigger = null;
+    trigger.focus({preventScroll:true});
+  },
+  trapTab: function(e){
+    var panel = document.getElementById('teacherPanel');
+    if(!panel.classList.contains('open')) return;
+    var focusables = panel.querySelectorAll(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+    if(!focusables.length) return;
+    var list = Array.prototype.slice.call(focusables);
+    var first = list[0], last = list[list.length-1];
+    var inside = panel.contains(document.activeElement);
+    if(e.shiftKey){
+      if(!inside || document.activeElement === first){ e.preventDefault(); last.focus({preventScroll:true}); }
+    } else {
+      if(!inside || document.activeElement === last){ e.preventDefault(); first.focus({preventScroll:true}); }
+    }
+  }
+};
+
+/* ============================================================
+   12) BOOT
+   ============================================================ */
+function boot(){
+  STATE.load();
+  ROUTER.screenEl = document.getElementById('screenRoot');
+  MASCOT.mountMini();
+  TEACHER.init();
+  document.getElementById('prevBtn').addEventListener('click', function(){ ROUTER.prev(); });
+  document.getElementById('nextBtn').addEventListener('click', function(){ ROUTER.next(); });
+  /* ←→ 화면·step 내비: IME 조합 중·입력요소 포커스·이미 소비된 키(defaultPrevented)는 무시(3중 가드) */
+  document.addEventListener('keydown', function(e){
+    if(e.isComposing || e.keyCode === 229) return;
+    if(e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    var tag = document.activeElement && document.activeElement.tagName;
+    if(tag==='INPUT' || tag==='TEXTAREA' || tag==='SELECT') return;
+    if(document.activeElement && document.activeElement.closest && document.activeElement.closest('[role="radiogroup"]')) return;
+    if(e.defaultPrevented) return;
+    if(e.key === 'ArrowLeft'){ ROUTER.prev(); } else { ROUTER.next(); }
+  });
+  ROUTER.render();
+}
+
+if(document.readyState === 'loading'){
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}
+
+})();
+</script>
+</body>
+</html>

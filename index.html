@@ -78,6 +78,7 @@ button{font-family:inherit;}
 .card-lavender{background:var(--brand-lavender);}
 .card-peach{background:var(--brand-peach);}
 .card-ochre{background:var(--brand-ochre);}
+.card-mint{background:var(--brand-mint);}
 .card-locked{background:var(--surface-card);}
 .card-locked .path-title{color:var(--muted);}
 .card-locked .path-desc{color:var(--muted-soft);}
@@ -158,6 +159,12 @@ button{font-family:inherit;}
       <ol class="path-list" id="pathList"></ol>
     </section>
 
+    <section class="section" aria-labelledby="makerHead">
+      <h2 id="makerHead">웹 앱 만들어 보기</h2>
+      <p class="section-note">4차시 이후, 선생님 안내에 따라 시작해요. 잠금은 없어요 — 학습지 4개를 먼저 끝내기를 권해요.</p>
+      <div id="makerCard"></div>
+    </section>
+
     <section class="section" aria-labelledby="bonusHead">
       <h2 id="bonusHead">보너스 활동</h2>
       <p class="section-note" id="bonusNote">학습지 4개를 모두 완료하면 열려요. 인터넷이 필요한 외부 사이트이고, 새 창에서 열려요.</p>
@@ -174,7 +181,7 @@ button{font-family:inherit;}
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="teacherHead">
     <h2 id="teacherHead">교사 패널 — 진행 현황</h2>
     <div id="teacherStatus"></div>
-    <p class="section-note" style="margin-top:12px;">전체 초기화는 이 기기의 <strong>모든 학습지(4개) 진행 기록</strong>을 지웁니다. 회차(반) 교체 시 사용하세요. 학습지 하나만 초기화하려면 그 학습지의 교사 패널(제목 5번 탭 또는 Alt+R)을 이용하세요.</p>
+    <p class="section-note" style="margin-top:12px;">전체 초기화는 이 기기의 <strong>학습지 4개와 만들기 활동 기록</strong>을 지웁니다. 회차(반) 교체 시 사용하세요. 학습지 하나만 초기화하려면 그 학습지의 교사 패널(제목 5번 탭 또는 Alt+R)을 이용하세요.</p>
     <div class="btn-row">
       <button type="button" class="btn btn-primary" id="teacherResetBtn">전체 초기화</button>
       <button type="button" class="btn btn-secondary" id="teacherCloseBtn">닫기</button>
@@ -226,6 +233,12 @@ var APPS = [
     screens:['W1','W2','W3','W4','S1','S2','S3','S4','S5','S5C','S6'],
     isDone:function(s){ var t = scr(s,'S6'); return !!t && !!t.computed && txtOf(t.thought).length > 0; } }
 ];
+
+var MAKER = { id:'maker', file:'sentiment-maker.html', key:'aimath26_maker_state',
+  title:'리뷰 감성 분석기 만들기', desc:'Gemini와 대화하며 나만의 감성 분석기 웹 앱을 만들어요',
+  cardClass:'card-mint',
+  screens:['M1','M2','M3','M4','M5','M6','M7'],
+  isDone:function(s){ var t = scr(s,'M7'); return !!t && txtOf(t.thought).length > 0; } };
 
 var BONUS = [
   { title:'인피니티 크래프트 (단어 만들기)', dotClass:'dot-mint',
@@ -290,6 +303,7 @@ function toast(msg){
 
 /* 직전 렌더의 완료 배열 — "방금 완료" 감지(돌아왔을 때 축하 토스트) */
 var prevDoneMap = null;
+var makerPrevDone = null;
 
 function renderAll(){
   var statuses = APPS.map(appStatus);
@@ -353,6 +367,43 @@ function renderAll(){
     list.appendChild(li);
   });
 
+  /* ---- 웹 앱 만들어보기(제작) 카드 — 항상 unlocked ---- */
+  var makerSt = appStatus(MAKER);
+  var makerHost = document.getElementById('makerCard');
+  makerHost.innerHTML = '';
+  var makerCardEl = el('div', {class:'path-card ' + MAKER.cardClass});
+  makerCardEl.appendChild(el('span', {class:'num-chip', 'aria-hidden':'true'}, '★'));
+
+  var makerBody = el('div', {class:'path-body'});
+  makerBody.appendChild(el('p', {class:'path-title'}, MAKER.title));
+  makerBody.appendChild(el('p', {class:'path-desc'}, MAKER.desc));
+  var makerState = el('div', {class:'path-state'});
+  if(makerSt.done){
+    makerState.appendChild(el('span', {class:'pill pill-done'}, '✓ 완료'));
+  }else if(makerSt.started && makerSt.pos > 0){
+    makerState.appendChild(el('span', {class:'pill pill-oncard'}, '진행 중 · 화면 ' + makerSt.pos + '/' + makerSt.total));
+  }else{
+    makerState.appendChild(el('span', {class:'pill pill-oncard'}, '도전 가능'));
+  }
+  makerBody.appendChild(makerState);
+  makerCardEl.appendChild(makerBody);
+
+  var makerAction = el('div', {class:'path-action'});
+  var makerLabel = makerSt.done ? '다시 보기' : (makerSt.started && makerSt.pos > 1 ? '이어하기' : '시작하기');
+  makerAction.appendChild(el('a', {
+    class:'btn btn-oncard',
+    href: MAKER.file,
+    'aria-label': MAKER.title + ' ' + makerLabel
+  }, makerLabel));
+  makerCardEl.appendChild(makerAction);
+  makerHost.appendChild(makerCardEl);
+
+  /* 방금 새로 완료된 「웹 앱 만들어보기」 축하 */
+  if(makerPrevDone === false && makerSt.done){
+    toast('「' + MAKER.title + '」 완료! 🎉');
+  }
+  makerPrevDone = makerSt.done;
+
   /* ---- 보너스 ---- */
   var allDone = doneCount === APPS.length;
   var bonusList = document.getElementById('bonusList');
@@ -389,6 +440,14 @@ function renderAll(){
     row.appendChild(el('strong', {}, stateTxt));
     tStatus.appendChild(row);
   });
+  var makerStateTxt = makerSt.done ? '완료' : (makerSt.started ? ('진행 중 · 화면 ' + makerSt.pos + '/' + makerSt.total) : '시작 전');
+  var makerRow = el('div', {class:'teacher-row'});
+  var makerRowLabel = el('span', {});
+  makerRowLabel.appendChild(el('span', {'aria-hidden':'true'}, '★ '));
+  makerRowLabel.appendChild(document.createTextNode('리뷰 감성 분석기 만들기'));
+  makerRow.appendChild(makerRowLabel);
+  makerRow.appendChild(el('strong', {}, makerStateTxt));
+  tStatus.appendChild(makerRow);
 }
 
 /* ============================================================
@@ -413,7 +472,7 @@ var TEACHER = {
       var area = document.getElementById('teacherConfirmArea');
       area.textContent = '';
       var box = el('div', {class:'card-hairline', style:{marginTop:'10px'}});
-      box.appendChild(el('p', {style:{margin:'0 0 10px'}}, '정말 전체 초기화할까요? 이 기기의 학습지 4개 진행 기록이 모두 사라집니다.'));
+      box.appendChild(el('p', {style:{margin:'0 0 10px'}}, '정말 전체 초기화할까요? 이 기기의 학습지 4개와 만들기 활동 기록이 모두 사라집니다.'));
       var row = el('div', {class:'btn-row'});
       var yes = el('button', {type:'button', class:'btn btn-primary'}, '예, 전체 초기화');
       yes.addEventListener('click', function(){
@@ -424,6 +483,7 @@ var TEACHER = {
           }
         }catch(e){}
         prevDoneMap = null; /* 초기화 직후 렌더가 "방금 완료"로 오인하지 않도록 리셋 */
+        makerPrevDone = null;
         renderAll();
         TEACHER.close();
         toast('전체 초기화되었습니다.');
