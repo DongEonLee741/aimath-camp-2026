@@ -344,6 +344,20 @@ input[type=range]::-moz-range-track{height:8px;border-radius:8px;background:var(
 .palette-eraser{width:44px;height:44px;border-radius:var(--r-sm);border:2px dashed var(--muted);background:repeating-linear-gradient(45deg,#fff,#fff 4px,#eee 4px,#eee 8px);cursor:pointer;}
 .palette-eraser.active{border-color:var(--ink);border-style:solid;}
 
+/* ---------- S2-2B 사진 -> 픽셀아트(업로드 존 · 참조/내 판 캔버스, v2.5) ---------- */
+.s22b-wrap{max-width:256px;}
+.s22b-empty{width:256px;max-width:100%;aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;text-align:center;padding:var(--sp-md);border:1px dashed var(--hairline);border-radius:var(--r-lg);color:var(--muted);font-size:14px;background:var(--surface-soft);}
+.s22b-preview{display:flex;align-items:center;gap:8px;margin:0 0 8px;}
+.s22b-preview img{border-radius:var(--r-sm);border:1px solid var(--hairline);display:block;}
+.upload-zone{border:2px dashed var(--hairline);border-radius:var(--r-lg);padding:var(--sp-md);display:flex;flex-direction:column;align-items:flex-start;gap:10px;}
+.upload-zone.drag-over{border-color:var(--accent);border-style:solid;background:var(--surface-card);} /* solid 전환 = 비색 단서(a11y B4) */
+.s22b-readout p{margin:0 0 4px;}
+/* step3 정리 화면 1뷰포트 압축(라이브 실측 2026-07-23: 1280x800에서 pane 14px 초과 --
+   thought-box 32->16px + mascot-row 24->16px로 회수(실측 14->2->0). 태블릿(820x1180)은
+   초과 0이라 영향 없음). */
+.s22b-recap .thought-box{margin:8px 0;}
+.s22b-recap .mascot-row{margin:8px 0;}
+
 /* ---------- 숫자 뷰 / 채널 분해 표 (v2 §B 화면11 ⓐⓒ: 뷰포트 역산 셀 크기) ----------
    overflow/max-height를 걷어내 16x16 전체가 스크롤 없이 한 화면에 들어가게 하고, 셀 크기는
    JS(computeTableCellPx)가 --cell-px로 세팅한다(하한 22·상한 32px). 채널 분해(숫자 1개라
@@ -489,6 +503,8 @@ function DEFAULT_STATE(){
       'P2-3': { step:0, thoughtIntro:'', missionRGB:false, missionHSV:false, thoughtFeel:'', missions3d:{m1:false,m2:false}, m3dQuiz:null },
       'S2-1': { step:0, thought:'', zoomTouched:false },
       'S2-2': { step:0 },
+      /* v2.5: S2-2B 추가(§5.1) — 원본·참조·내 판은 비영속(모듈 메모리, 화면 코드 쪽 참고) */
+      'S2-2B': { step:0, thought:'' },
       'S2-3': { step:0, thought:'', numViewSeen:false, channelViewSeen:false },
       'S2-4': { step:0, applied:{} },
       /* v2: score 추가(§B 화면13 ⓒ, 교사 초기화로 리셋) */
@@ -656,6 +672,7 @@ var SCREEN_DEFS = [
   {id:'P2-3', section:1, label:'HSV 색공간'},
   {id:'S2-1', section:2, label:'사진 확대 → 픽셀'},
   {id:'S2-2', section:2, label:'픽셀아트 캐릭터'},
+  {id:'S2-2B', section:2, label:'사진 → 픽셀아트'},
   {id:'S2-3', section:2, label:'어떻게 저장되나'},
   {id:'S2-4', section:2, label:'이미지 변환 실험실'},
   {id:'S2-5', section:2, label:'행렬 테트리스'},
@@ -3575,6 +3592,8 @@ var PALETTE_COLORS = [
   {r:0,g:0,b:0},{r:255,g:255,b:255},{r:229,g:72,b:77},{r:46,g:160,b:67},{r:31,g:111,b:235},
   {r:232,g:185,b:74},{r:255,g:77,b:139},{r:184,g:164,b:237},{r:255,g:176,b:132},{r:107,g:68,b:35}
 ];
+/* S2-2B a11y(렌즈 B5, 2026-07-23): 색 맞추기 과제에서 색맹 사용자용 이름. 값 배열과 인덱스 동기. */
+var PALETTE_NAMES = ['검정','흰색','빨강','초록','파랑','노랑','분홍','연보라','살구','갈색'];
 function buildS2_2(){
   return {
     steps: [
@@ -3753,6 +3772,437 @@ function buildS2_2(){
           MASCOT.bubble(screen, '오! 내 친구다! 멋지게 완성해줘~', {tone:'cheer'});
           container.appendChild(screen);
         }
+      }
+    ]
+  };
+}
+
+/* ============================================================
+   S2-2B 사진 -> 픽셀아트: 순수 수학 함수(수정요청_사진픽셀아트_v1.md §3, 오라클 계약) --
+   photoToGrid·nearestPaletteIndex·gridMatchCount·matchPercent·buildExampleBuffer.
+   DOM·three.js 비의존(§9-8) -- window.__IMG 노출은 아래 __IMG 블록(K1~K4) 참고.
+   ============================================================ */
+function nearestPaletteIndex(r,g,b){
+  /* §3.2: 인덱스 0->9 오름차순, 엄격 부등호 <로만 갱신 -> 동률이면 낮은 인덱스가 자동 유지된다. */
+  var best = 0;
+  var p0 = PALETTE_COLORS[0];
+  var bestD = (r-p0.r)*(r-p0.r) + (g-p0.g)*(g-p0.g) + (b-p0.b)*(b-p0.b);
+  for(var k=1;k<10;k++){
+    var p = PALETTE_COLORS[k];
+    var d = (r-p.r)*(r-p.r) + (g-p.g)*(g-p.g) + (b-p.b)*(b-p.b);
+    if(d < bestD){ bestD = d; best = k; }
+  }
+  return best;
+}
+function photoToGrid(data, w, h){
+  /* §3.1: 16x16 블록 평균(정수, jsRound=Math.round 동치) -> 최근접 팔레트 색 양자화. 알파(4번째
+     채널)는 무시한다(로딩 경로가 흰 배경 합성을 보장, §4.2). 호출 전 min(w,h)>=16 가드가 모든
+     블록을 비지 않게 보장한다(빈 블록이면 n=0, 이 함수의 책임 밖 -- 가드는 §4.2 파이프라인). */
+  var ref = [], refAvg = [];
+  for(var i=0;i<16;i++){
+    var y0 = Math.floor(i*h/16), y1 = Math.floor((i+1)*h/16);
+    var row = [], rowAvg = [];
+    for(var j=0;j<16;j++){
+      var x0 = Math.floor(j*w/16), x1 = Math.floor((j+1)*w/16);
+      var sr=0, sg=0, sb=0;
+      for(var y=y0;y<y1;y++){
+        var base = (y*w + x0)*4;
+        for(var x=x0;x<x1;x++){
+          var o = base + (x-x0)*4;
+          sr += data[o]; sg += data[o+1]; sb += data[o+2];
+        }
+      }
+      var n = (y1-y0)*(x1-x0);
+      var avgR = Math.round(sr/n), avgG = Math.round(sg/n), avgB = Math.round(sb/n);
+      var k = nearestPaletteIndex(avgR, avgG, avgB);
+      var pc = PALETTE_COLORS[k];
+      row.push({r:pc.r, g:pc.g, b:pc.b});
+      rowAvg.push({r:avgR, g:avgG, b:avgB});
+    }
+    ref.push(row); refAvg.push(rowAvg);
+  }
+  return {ref:ref, refAvg:refAvg};
+}
+function gridMatchCount(myGrid, refGrid){
+  /* §3.3: myGrid의 null(빈 칸)은 흰색(255,255,255)으로 간주(기존 gridForMath 관례와 동일). */
+  var m = 0;
+  for(var i=0;i<16;i++){
+    for(var j=0;j<16;j++){
+      var c = myGrid[i][j] || {r:255,g:255,b:255};
+      var rc = refGrid[i][j];
+      if(c.r===rc.r && c.g===rc.g && c.b===rc.b) m++;
+    }
+  }
+  return m;
+}
+function matchPercent(m){
+  /* §3.3: floor(m/256*100) -- Math.round 금지(255->99가 정답, m=256일 때만 100). */
+  return Math.floor(m*100/256);
+}
+function buildExampleBuffer(){
+  /* §3.4: 기존 ENGINE_PX.APPLE_GRID(20x20)를 셀당 4x4px로 칠한 80x80 RGBA 평판 배열.
+     픽셀(x,y) = 셀(floor(y/4), floor(x/4)) -- §3.1과 같은 행 i=세로·열 j=가로 관례.
+     캔버스를 쓰지 않고 배열을 직접 채운다(오라클 골든 겸용, K4). */
+  var grid = ENGINE_PX.APPLE_GRID;
+  var w=80, h=80;
+  var buf = new Array(w*h*4);
+  for(var y=0;y<h;y++){
+    var i = Math.floor(y/4);
+    for(var x=0;x<w;x++){
+      var j = Math.floor(x/4);
+      var c = grid[i][j];
+      var o = (y*w+x)*4;
+      if(c){ buf[o]=c.r; buf[o+1]=c.g; buf[o+2]=c.b; } else { buf[o]=255; buf[o+1]=255; buf[o+2]=255; }
+      buf[o+3]=255;
+    }
+  }
+  return buf;
+}
+
+/* ============================================================
+   S2-2B 비영속 모듈 메모리(§5.2) -- 원본 사진·참조 격자·내 판은 localStorage에 절대 저장하지
+   않는다(개인정보 계약). 새로고침하면 저절로 소거되고, 교사 전체 초기화(TEACHER, 리로드를
+   동반하지 않음)에서는 resetS22BMem()이 이 자리를 대신 비운다.
+   ============================================================ */
+var S22B_CELL = 16; /* 캔버스 셀 초기값 16px(256px/판, §6) */
+var S22B_MEM = { ref:null, refAvg:null, my:emptyPixelGrid(), srcThumb:null, srcLabel:'' };
+function resetS22BMem(){
+  S22B_MEM.ref = null; S22B_MEM.refAvg = null; S22B_MEM.my = emptyPixelGrid();
+  S22B_MEM.srcThumb = null; S22B_MEM.srcLabel = '';
+}
+
+/* 변환 성공 공용 마무리(§2 step1 D7, §6): toast + (지금 S2-2B를 보고 있을 때만) 현재 위치를
+   다시 그리고 결과 헤딩으로 포커스를 옮긴다. 화면을 이미 벗어난 뒤 비동기 콜백이 늦게 도착해도
+   엉뚱한 다른 화면을 다시 그리지 않도록 가드한다. */
+function afterS22BPhotoApplied(msg){
+  toast(msg);
+  if(STATE.data.screenId === 'S2-2B'){
+    ROUTER.refresh();
+    focusView(ROUTER.activePane);
+  }
+}
+function applyS22BPhotoData(data, w, h, srcThumb, srcLabel){
+  var result = photoToGrid(data, w, h);
+  S22B_MEM.ref = result.ref;
+  S22B_MEM.refAvg = result.refAvg;
+  S22B_MEM.srcThumb = srcThumb;
+  S22B_MEM.srcLabel = srcLabel || '';
+  afterS22BPhotoApplied('사진을 16×16 픽셀아트로 바꿨어요!');
+}
+function applyS22BExample(){
+  var buf = buildExampleBuffer();
+  var result = photoToGrid(buf, 80, 80);
+  S22B_MEM.ref = result.ref;
+  S22B_MEM.refAvg = result.refAvg;
+  S22B_MEM.srcThumb = null; /* §3.4·§4.4: 예시는 미리보기 없이 라벨만 */
+  S22B_MEM.srcLabel = '예시 그림(사과)';
+  afterS22BPhotoApplied('예시 그림을 픽셀아트로 바꿨어요!');
+}
+/* §4.2 디코드·정규화 파이프라인(순서 엄수): FileReader.readAsDataURL -> Image.onload -> 가드1
+   (min(natural) < 16 거부) -> 축소 크기 결정(최대 변 1024) -> 가드2(축소 후 min < 16 거부, 극단
+   종횡비 방어 -- 적대검증 BLOCKING 반영) -> 오프스크린 canvas(흰 배경 채움 뒤 drawImage) ->
+   getImageData -> photoToGrid. 모든 가드는 toast만 하고 상태를 바꾸지 않는다. */
+function handleS22BImageFile(file){
+  if(!file || !file.type || file.type.indexOf('image/') !== 0){
+    toast('이미지 파일이 아니에요.');
+    return;
+  }
+  var reader = new FileReader();
+  reader.onerror = function(){ toast('이 사진은 열 수 없어요 — 다른 사진으로 해보세요.'); };
+  reader.onload = function(){
+    var dataUrl = reader.result;
+    var img = new Image();
+    img.onerror = function(){ toast('이 사진은 열 수 없어요 — 다른 사진으로 해보세요.'); };
+    img.onload = function(){
+      var w = img.naturalWidth, h = img.naturalHeight;
+      if(Math.min(w,h) < 16){ toast('사진이 너무 작아요(가로·세로 16픽셀 이상).'); return; }
+      var w2 = w, h2 = h;
+      if(Math.max(w,h) > 1024){
+        var scale = 1024/Math.max(w,h);
+        w2 = Math.round(w*scale); h2 = Math.round(h*scale);
+      }
+      if(Math.min(w2,h2) < 16){ toast('사진이 너무 길쭉해요 — 가로·세로 비율이 비슷한 사진으로 해보세요.'); return; }
+      var canvas = document.createElement('canvas');
+      canvas.width = w2; canvas.height = h2;
+      var ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0,0,w2,h2);
+      ctx.drawImage(img,0,0,w2,h2);
+      var data;
+      try{ data = ctx.getImageData(0,0,w2,h2).data; }
+      catch(e){ toast('이 사진은 열 수 없어요 — 다른 사진으로 해보세요.'); return; }
+      applyS22BPhotoData(data, w2, h2, dataUrl, file.name || '');
+    };
+    img.src = dataUrl;
+  };
+  reader.readAsDataURL(file);
+}
+/* §2 step1·step2 공용 업로드 존(§4.1): 파일 선택(1순위 버튼) + 드래그(dragover/drop) + 붙여넣기
+   (document paste 리스너, 이 존이 마운트된 동안만 -- registerUnmount로 해제) + 예시 그림.
+   opts:{primaryLabel, privacy(개인정보 고지 문구 표시 여부)}. */
+function mountS22BUploadZone(container, opts){
+  opts = opts || {};
+  var zone = el('div', {class:'upload-zone'});
+  var fileInput = el('input', {type:'file', accept:'image/*', style:{display:'none'}});
+  var mainBtn = el('button', {type:'button', class:'btn btn-primary'}, opts.primaryLabel || '사진 선택하기');
+  mainBtn.addEventListener('click', function(){ fileInput.click(); });
+  fileInput.addEventListener('change', function(){
+    var f = fileInput.files && fileInput.files[0];
+    fileInput.value = '';
+    if(f) handleS22BImageFile(f);
+  });
+  zone.appendChild(mainBtn);
+  zone.appendChild(fileInput);
+  zone.appendChild(el('p', {class:'muted'}, '드래그해서 놓거나, 복사한 사진을 붙여넣기(Ctrl+V)를 해도 돼요.'));
+  var exampleBtn = el('button', {type:'button', class:'btn btn-secondary'}, '예시 그림(사과)으로 해보기');
+  exampleBtn.addEventListener('click', function(){ applyS22BExample(); });
+  zone.appendChild(exampleBtn);
+  if(opts.privacy){
+    zone.appendChild(el('p', {class:'muted'}, '사진은 이 화면 안에서만 쓰여요. 저장되거나 어디로도 전송되지 않고, 새로고침하면 사라져요.'));
+  }
+  zone.addEventListener('dragover', function(e){ e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', function(){ zone.classList.remove('drag-over'); });
+  zone.addEventListener('drop', function(e){
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    var files = (e.dataTransfer && e.dataTransfer.files) || [];
+    var picked = null;
+    for(var i=0;i<files.length;i++){
+      if(files[i].type && files[i].type.indexOf('image/')===0){ picked = files[i]; break; }
+    }
+    if(picked) handleS22BImageFile(picked); else toast('이미지 파일이 아니에요.');
+  });
+  function onPaste(e){
+    var items = e.clipboardData && e.clipboardData.items;
+    if(!items) return;
+    var picked = null;
+    for(var i=0;i<items.length;i++){
+      if(items[i].type && items[i].type.indexOf('image/')===0){ picked = items[i]; break; }
+    }
+    if(!picked){ toast('이미지 파일이 아니에요.'); return; }
+    var f = picked.getAsFile();
+    if(f) handleS22BImageFile(f);
+  }
+  document.addEventListener('paste', onPaste);
+  /* 존 밖 드롭 방어(검증 fix 2026-07-23): 존을 빗나간 드롭은 브라우저 기본 동작으로 페이지가
+     사진 파일 자체로 대체된다(비영속 메모리 전부 소실). 문서 레벨에서 기본 동작만 막는다 --
+     존 안 드롭은 더 깊은 존 핸들러가 버블 전에 처리하므로 영향 없다. */
+  function onDocDragover(e){ e.preventDefault(); }
+  function onDocDrop(e){ e.preventDefault(); }
+  document.addEventListener('dragover', onDocDragover);
+  document.addEventListener('drop', onDocDrop);
+  registerUnmount(function(){
+    document.removeEventListener('paste', onPaste);
+    document.removeEventListener('dragover', onDocDragover);
+    document.removeEventListener('drop', onDocDrop);
+  });
+  container.appendChild(zone);
+}
+
+function buildS2_2B(){
+  var pickedColor = null; /* §2 step1 ⓘ: 참조 격자 탭으로 고른 팔레트 색 -- step2의 현재 색으로
+    이어진다(색 집기 겸용). S22B_MEM(§5.2) 계약 밖의 화면 전용 UI 변수(사진·격자 데이터 아님). */
+  return {
+    steps: [
+      { /* step1: 사진 넣기 + 변환 참조 만들기 */
+        mount: function(container){
+          var screen = el('div', {class:'screen'});
+          screen.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 어떻게 칠할까?'));
+          screen.appendChild(el('h1', {class:'screen-title'}, '사진 → 픽셀아트'));
+          screen.appendChild(el('p', {class:'muted'}, '사진 한 장이 16×16 = 256칸의 색 데이터로 바뀌는 걸 직접 보세요.'));
+
+          var stage = el('div', {class:'stage-grid stage-grid--keep2'});
+          var left = el('div', {class:'stage-left'});
+          var right = el('div', {class:'stage-right'});
+          stage.appendChild(left); stage.appendChild(right);
+          screen.appendChild(stage);
+
+          var inspectCard = el('div', {class:'card-hairline', style:{marginTop:'var(--sp-md)'}});
+          function renderInspect(i,j){
+            inspectCard.innerHTML = '';
+            if(i==null){
+              inspectCard.appendChild(el('p', {class:'muted'}, '참조 격자의 칸을 눌러 보면 그 칸의 평균 색과 팔레트 색을 볼 수 있어요.'));
+              return;
+            }
+            /* a11y 렌즈 B3(방안 A)·B5: 행·열 좌표 + 팔레트 색 이름 병기(키보드 위치 확인·색맹 연결) */
+            var avg = S22B_MEM.refAvg[i][j], pal = S22B_MEM.ref[i][j];
+            var name = PALETTE_NAMES[nearestPaletteIndex(pal.r, pal.g, pal.b)];
+            inspectCard.appendChild(el('p', {}, '이 칸(' + (i+1) + '행 ' + (j+1) + '열): 블록 평균 (' + avg.r + ', ' + avg.g + ', ' + avg.b + ') → 가장 가까운 팔레트 색 (' + pal.r + ', ' + pal.g + ', ' + pal.b + ') ' + name));
+          }
+
+          if(!S22B_MEM.ref){
+            left.appendChild(el('div', {class:'s22b-empty'}, '아직 사진이 없어요'));
+          } else {
+            if(S22B_MEM.srcThumb){
+              var pv = el('div', {class:'s22b-preview'});
+              pv.appendChild(el('img', {src:S22B_MEM.srcThumb, alt:(S22B_MEM.srcLabel || '원본 사진'), style:{maxWidth:'96px', maxHeight:'96px'}}));
+              pv.appendChild(el('span', {class:'muted'}, '원본'));
+              left.appendChild(pv);
+            } else if(S22B_MEM.srcLabel){
+              left.appendChild(el('p', {class:'muted', style:{margin:'0 0 8px'}}, '원본: ' + S22B_MEM.srcLabel));
+            }
+            var wrap = el('div', {class:'pixel-canvas-wrap s22b-wrap'});
+            /* a11y 렌즈 B2: role='application' -- SR 탐색 모드가 방향키를 가로채지 않고 keydown이
+               캔버스에 직접 전달되게 한다(캔버스 단일 위젯 한정 사용). */
+            var refCanvas = el('canvas', {tabindex:'0', role:'application', 'aria-label':'변환된 참조 격자. 칸을 클릭하거나 방향키로 골라 정보를 확인하세요.'});
+            wrap.appendChild(refCanvas);
+            left.appendChild(wrap);
+            ENGINE_PX.renderGridToCanvas(refCanvas, S22B_MEM.ref, S22B_CELL, {});
+
+            var selI=null, selJ=null;
+            function pick(i,j){
+              selI=i; selJ=j;
+              renderInspect(i,j);
+              pickedColor = S22B_MEM.ref[i][j];
+              /* a11y 렌즈 B1(Serious): 방향키·탭 선택 결과를 SR에 발화(카드 갱신만으론 무전달) */
+              var avg = S22B_MEM.refAvg[i][j], pal = S22B_MEM.ref[i][j];
+              announce((i+1) + '행 ' + (j+1) + '열. 블록 평균 (' + avg.r + ', ' + avg.g + ', ' + avg.b + ') → 팔레트 색 (' + pal.r + ', ' + pal.g + ', ' + pal.b + ') ' + PALETTE_NAMES[nearestPaletteIndex(pal.r, pal.g, pal.b)]);
+            }
+            refCanvas.addEventListener('click', function(e){
+              var r = refCanvas.getBoundingClientRect(), cell = r.width/16;
+              var j = Math.floor((e.clientX-r.left)/cell), i = Math.floor((e.clientY-r.top)/cell);
+              if(i<0||i>=16||j<0||j>=16) return;
+              pick(i,j);
+            });
+            refCanvas.addEventListener('keydown', function(e){
+              var i = selI==null?0:selI, j = selJ==null?0:selJ;
+              if(e.key==='ArrowLeft'){ j=Math.max(0,j-1); } else if(e.key==='ArrowRight'){ j=Math.min(15,j+1); }
+              else if(e.key==='ArrowUp'){ i=Math.max(0,i-1); } else if(e.key==='ArrowDown'){ i=Math.min(15,i+1); }
+              else { return; }
+              e.preventDefault(); e.stopPropagation();
+              pick(i,j);
+            });
+          }
+
+          if(S22B_MEM.ref){
+            renderInspect(null,null);
+            screen.appendChild(inspectCard);
+          }
+
+          mountS22BUploadZone(right, {primaryLabel:'사진 선택하기', privacy:true});
+
+          container.appendChild(screen);
+        },
+        isComplete: function(){ return !!S22B_MEM.ref; }
+      },
+      { /* step2: 내 판에 따라 그리기 + 일치율 */
+        mount: function(container){
+          var screen = el('div', {class:'screen'});
+          screen.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 어떻게 칠할까?'));
+          screen.appendChild(el('h1', {class:'screen-title'}, '사진 → 픽셀아트'));
+
+          if(!S22B_MEM.ref){
+            /* §5.3 resume: 리로드 등으로 참조가 없으면 판 대신 재로드 안내(step1과 같은 로더) */
+            screen.appendChild(el('p', {class:'screen-prompt'}, '새로고침하면 사진이 사라져요. 사진을 다시 올리면 내 판을 칠할 수 있어요.'));
+            mountS22BUploadZone(screen, {primaryLabel:'사진 다시 올리기', privacy:false});
+            container.appendChild(screen);
+            return;
+          }
+
+          var stage = el('div', {class:'stage-grid stage-grid--keep2'});
+          var left = el('div', {class:'stage-left'});
+          var right = el('div', {class:'stage-right'});
+          stage.appendChild(left); stage.appendChild(right);
+          screen.appendChild(stage);
+
+          var refWrap = el('div', {class:'pixel-canvas-wrap s22b-wrap'});
+          var refCanvas = el('canvas', {role:'img', 'aria-label':'참조 격자.'});
+          refWrap.appendChild(refCanvas);
+          left.appendChild(refWrap);
+          left.appendChild(el('p', {class:'muted', style:{margin:'6px 0 0'}}, '참조'));
+          ENGINE_PX.renderGridToCanvas(refCanvas, S22B_MEM.ref, S22B_CELL, {});
+
+          var myWrap = el('div', {class:'pixel-canvas-wrap s22b-wrap'});
+          var myCanvas = el('canvas', {role:'img', 'aria-label':'16x16 내 판. 클릭이나 드래그로 칠하세요.'});
+          myWrap.appendChild(myCanvas);
+          right.appendChild(myWrap);
+
+          var current = pickedColor || {r:PALETTE_COLORS[2].r, g:PALETTE_COLORS[2].g, b:PALETTE_COLORS[2].b};
+          var erasing = false;
+          var paletteRow = el('div', {class:'palette-row'});
+          var swatchBtns = [];
+          function syncActive(){
+            swatchBtns.forEach(function(x,i){
+              var c = PALETTE_COLORS[i];
+              x.classList.toggle('active', !erasing && current.r===c.r && current.g===c.g && current.b===c.b);
+            });
+            eraserBtn.classList.toggle('active', erasing);
+          }
+          PALETTE_COLORS.forEach(function(c,i){
+            var b = el('button', {type:'button', class:'palette-swatch', style:{background:'rgb('+c.r+','+c.g+','+c.b+')'}, 'aria-label':'팔레트 색 '+(i+1)+' '+PALETTE_NAMES[i]});
+            b.addEventListener('click', function(){
+              erasing = false;
+              current = {r:c.r,g:c.g,b:c.b};
+              pickedColor = current;
+              syncActive();
+            });
+            swatchBtns.push(b);
+            paletteRow.appendChild(b);
+          });
+          var eraserBtn = el('button', {type:'button', class:'palette-eraser', title:'지우개', 'aria-label':'지우개'});
+          eraserBtn.addEventListener('click', function(){ erasing = true; syncActive(); });
+          paletteRow.appendChild(eraserBtn);
+          syncActive();
+          right.appendChild(paletteRow);
+
+          var readout = el('div', {class:'s22b-readout'});
+          var line1 = el('p', {});
+          var line2 = el('p', {class:'muted'});
+          var hamming = el('p', {class:'muted'}, '서로 다른 칸의 개수를 "해밍 거리"라고 불러요. 다른 칸이 0개면 일치율 100%!');
+          readout.appendChild(line1); readout.appendChild(line2); readout.appendChild(hamming);
+          screen.appendChild(readout);
+
+          /* §6: 텍스트는 칠할 때마다 즉시 갱신하고, SR 발화(기존 전역 liveRegion, announce())만
+             500ms 디바운스한다 -- 연속 드래그 페인팅 중 SR 폭주 방지. */
+          var srTimer = null;
+          function updateReadout(){
+            var m = gridMatchCount(S22B_MEM.my, S22B_MEM.ref);
+            var p = matchPercent(m);
+            var n = ENGINE_PX.countPainted(S22B_MEM.my);
+            line1.textContent = '일치한 칸 ' + m + ' / 256 · 일치율 ' + p + '% · 서로 다른 칸 ' + (256-m) + '개';
+            line2.textContent = '칠한 칸 ' + n + ' / 256 (최소 20칸) — 칠하지 않은 칸은 흰색으로 계산해요';
+            clearTimeout(srTimer);
+            srTimer = setTimeout(function(){ announce(line1.textContent + ' ' + line2.textContent); }, 500);
+          }
+          registerUnmount(function(){ clearTimeout(srTimer); });
+
+          function redrawMy(){ ENGINE_PX.renderGridToCanvas(myCanvas, S22B_MEM.my, S22B_CELL, {}); }
+          redrawMy();
+          updateReadout();
+
+          function paintAt(clientX, clientY){
+            var r = myCanvas.getBoundingClientRect();
+            var cell = r.width/16;
+            var j = Math.floor((clientX-r.left)/cell), i = Math.floor((clientY-r.top)/cell);
+            if(i<0||i>=16||j<0||j>=16) return;
+            S22B_MEM.my[i][j] = erasing ? null : {r:current.r, g:current.g, b:current.b};
+            redrawMy();
+            updateReadout();
+            refreshNav();
+          }
+          var painting = false;
+          myCanvas.addEventListener('pointerdown', function(e){ painting=true; paintAt(e.clientX,e.clientY); try{myCanvas.setPointerCapture(e.pointerId);}catch(err){} });
+          myCanvas.addEventListener('pointermove', function(e){ if(painting) paintAt(e.clientX,e.clientY); });
+          myCanvas.addEventListener('pointerup', function(){ painting=false; });
+          myCanvas.addEventListener('pointercancel', function(){ painting=false; });
+
+          container.appendChild(screen);
+        },
+        isComplete: function(){ return !!S22B_MEM.ref && ENGINE_PX.countPainted(S22B_MEM.my) >= 20; }
+      },
+      { /* step3: 정리 + 생각칸 */
+        mount: function(container){
+          var screen = el('div', {class:'screen s22b-recap'});
+          screen.appendChild(el('div', {class:'screen-eyebrow'}, '섹션2 · 어떻게 칠할까?'));
+          screen.appendChild(el('h1', {class:'screen-title'}, '사진 → 픽셀아트'));
+          screen.appendChild(Components.SummaryCard({color:'cream', title:'①', body:'사진 → 숫자: 사진을 16×16 블록으로 나눠 각 블록의 R·G·B <b>평균</b>을 구했어요.'}));
+          screen.appendChild(Components.SummaryCard({color:'peach', title:'②', body:'평균 색 → 팔레트: 3차원 색 공간에서 <b>가장 가까운</b> 팔레트 색을 골랐어요(세 성분 차이의 제곱합으로 비교해요).'}));
+          screen.appendChild(Components.SummaryCard({color:'lavender', title:'③', body:'내 판 ↔ 참조: <b>서로 다른 칸의 개수(해밍 거리)</b>가 작을수록 일치율이 높아요.'}));
+          screen.appendChild(Components.ThoughtBox({screenId:'S2-2B', key:'thought', labelText:'생각을 적어보세요', placeholder:'생각을 적어보세요'}));
+          MASCOT.bubble(screen, '내 사진이 숫자 256칸이 됐어! 신기하지?', {tone:'cheer'});
+          container.appendChild(screen);
+        },
+        isComplete: function(){ return (STATE.screen('S2-2B').thought||'').trim().length>0; }
       }
     ]
   };
@@ -4821,7 +5271,7 @@ function buildS3_4(){
 var SCREENS = {
   'P1-1': buildP1_1(), 'P1-2': buildP1_2(), 'P1-3': buildP1_3(), 'P1-4': buildP1_4(), 'P1-5': buildP1_5(),
   'P2-1': buildP2_1(), 'P2-2': buildP2_2(), 'P2-3': buildP2_3(),
-  'S2-1': buildS2_1(), 'S2-2': buildS2_2(), 'S2-3': buildS2_3(), 'S2-4': buildS2_4(), 'S2-5': buildS2_5(), 'S2-6': buildS2_6(),
+  'S2-1': buildS2_1(), 'S2-2': buildS2_2(), 'S2-2B': buildS2_2B(), 'S2-3': buildS2_3(), 'S2-4': buildS2_4(), 'S2-5': buildS2_5(), 'S2-6': buildS2_6(),
   'S3-1': buildS3_1(), 'S3-2': buildS3_2(), 'S3-3': buildS3_3(), 'S3-4': buildS3_4()
 };
 
@@ -4899,6 +5349,15 @@ window.__IMG.templateMasks = function(){ return ENGINE_PX.TEMPLATE_MASKS; }; /* 
 window.__IMG.pickColor = ENGINE_PX.pickColor;          /* I13: S2-2 스포이드(§B 화면10 ⓑ) */
 window.__IMG.scoreForLines = scoreForLines;             /* I15: S2-5 점수(§B 화면13 ⓒ) */
 window.__IMG.tetrisNewGame = TETRIS.newGame;            /* I15: "시작 전 무기록" 상태 전이 확인용 */
+/* v2.5 S2-2B 확장 노출(수정요청_사진픽셀아트_v1.md §8 — K1~K4 오라클 대상). 전부 정의·호출
+   모두 DOM 비의존(순수 함수), 실제 화면(step1·step2)이 소비하는 것과 같은 함수를 그대로
+   재노출한다(분기 없음). */
+window.__IMG.photoToGrid = photoToGrid;                 /* K1·K4: {ref, refAvg} 반환 */
+window.__IMG.nearestPaletteIndex = nearestPaletteIndex; /* K2 */
+window.__IMG.gridMatchCount = gridMatchCount;           /* K3: m 반환 */
+window.__IMG.matchPercent = matchPercent;               /* K3: floor(m/256*100), UI도 이 함수만 사용 */
+window.__IMG.buildExampleBuffer = buildExampleBuffer;   /* K4: EXAMPLE_BUFFER 생성 함수 */
+window.__IMG.paletteColors = PALETTE_COLORS;            /* K2: 팔레트 표 10x3(값·순서 무변경) */
 
 /* ============================================================
    9) TEACHER — 교사 패널(제목 5탭 또는 Alt+R)
@@ -4928,6 +5387,9 @@ var TEACHER = {
       var yes = el('button', {type:'button', class:'btn btn-primary'}, '예, 초기화');
       yes.addEventListener('click', function(){
         STATE.reset();
+        /* v2.5 S2-2B(§5.2): STATE.reset()은 리로드를 동반하지 않으므로 모듈 메모리
+           (사진·참조·내 판)를 별도로 비운다 — 개인정보·회차 초기화 계약. */
+        resetS22BMem();
         ROUTER.go('P1-1', {silent:true});
         TEACHER.close();
         toast('초기화되었습니다.');
